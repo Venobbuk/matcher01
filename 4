@@ -1,0 +1,113 @@
+master database abstract
+-- phpMyAdmin SQL Dump
+-- version 5.2.2
+-- https://www.phpmyadmin.net/
+--
+-- Host: localhost
+-- Generation Time: May 24, 2025 at 01:53 AM
+-- Server version: 8.0.39-30
+-- PHP Version: 8.2.28
+
+SET SQL_MODE = "NO_AUTO_VALUE_ON_ZERO";
+START TRANSACTION;
+SET time_zone = "+00:00";
+
+
+/*!40101 SET @OLD_CHARACTER_SET_CLIENT=@@CHARACTER_SET_CLIENT */;
+/*!40101 SET @OLD_CHARACTER_SET_RESULTS=@@CHARACTER_SET_RESULTS */;
+/*!40101 SET @OLD_COLLATION_CONNECTION=@@COLLATION_CONNECTION */;
+/*!40101 SET NAMES utf8mb4 */;
+
+--
+-- Database: `dbtuefcrpdztyb`
+--
+
+-- --------------------------------------------------------
+
+--
+-- Table structure for table `xwz_master_products`
+--
+
+CREATE TABLE `xwz_master_products` (
+  `id` mediumint NOT NULL,
+  `room_id` mediumint NOT NULL,
+  `sku` varchar(255) NOT NULL,
+  `product_title` varchar(255) NOT NULL,
+  `product_category` varchar(255) NOT NULL,
+  `product_type` varchar(50) NOT NULL DEFAULT 'cigar',
+  `brand` varchar(255) NOT NULL,
+  `main_photo` varchar(255) DEFAULT NULL,
+  `multiple_photos` longtext,
+  `recommended_retail_price` decimal(10,2) DEFAULT '0.00',
+  `price_sheet_name` varchar(255) NOT NULL DEFAULT '',
+  `excel_sheet_name` varchar(255) NOT NULL DEFAULT '',
+  `ticket_type` varchar(255) NOT NULL DEFAULT '',
+  `seats_reference` longtext CHARACTER SET utf8mb4 COLLATE utf8mb4_0900_ai_ci NOT NULL,
+  `seat_section` varchar(255) DEFAULT NULL,
+  `seat_row` varchar(255) DEFAULT NULL,
+  `seat_number` varchar(255) DEFAULT NULL,
+  `remark` varchar(255) DEFAULT NULL,
+  `is_featured` tinyint(1) DEFAULT '0'
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci;
+
+--
+-- Dumping data for table `xwz_master_products`
+--
+
+INSERT INTO `xwz_master_products` (`id`, `room_id`, `sku`, `product_title`, `product_category`, `product_type`, `brand`, `main_photo`, `multiple_photos`, `recommended_retail_price`, `price_sheet_name`, `excel_sheet_name`, `ticket_type`, `seats_reference`, `seat_section`, `seat_row`, `seat_number`, `remark`, `is_featured`) VALUES
+(1, 1, '537-001', '537戈第托 (20支/盒) <BR>537 GORDITOS', 'Non-Cuban 非古', 'cigar', '537', '/wp-content/uploads/2024/05/01_743.jpg', '', 0.00, '323 master (1)', '323 master (1).xlsx', '', '', NULL, NULL, NULL, NULL, 0),
+(2, 1, '537-002', '537短卡纳拉赛 (20支/盒) <BR>537 SHORT CANONAZO', 'Non-Cuban 非古', 'cigar', '537', '/wp-content/uploads/2024/05/01_858.jpg', '', 0.00, '323 master (1)', '323 master (1).xlsx', '', '', NULL, NULL, NULL, NULL, 0),
+(3, 1, '537-003', '537崇高 (20支/盒) <BR>537 SUBLIMES', 'Non-Cuban 非古', 'cigar', '537', '/wp-content/uploads/2024/05/01_48.jpg', '', 0.00, '323 master (1)', '323 master (1).xlsx', '', '', NULL, NULL, NULL, NULL, 0),
+(4, 1, 'x1502-026', '1502周年纪念 托罗 (10支/盒) 1502 ANIVERSARIO TORO BOX PRESSED', 'Non-Cuban 非古', 'cigar', '1502', '/wp-content/uploads/2024/05/01_529.jpg', '', 0.00, '323 master (1)', '323 master (1).xlsx', '', '', NULL, NULL, NULL, NULL, 0),
+(5, 1, 'x1502-027', '1502黑金 高朗拿 (25支/盒) 1502 BLACK GOLD CORONA BOX PRESSED', 'Non-Cuban 非古', 'cigar', '1502', '/wp-content/uploads/2024/05/01_68.jpg', '', 0.00, '323 master (1)', '323 master (1).xlsx', '', '', NULL, NULL, NULL, NULL, 0),
+(6, 1, '1502-028', '1502黑金 长矛 ( 7 X 38 ) (25支/盒) 1502 BLACK GOLD LANCEROS BOX PRESSED ( 7 X 38)', 'Non-Cuban 非古', 'cigar', '1502', '/wp-content/uploads/2024/05/01_748.jpg', '', 0.00, '323 master (1)', '323 master (1).xlsx', '', '', NULL, NULL, NULL, NULL, 0),
+(7, 1, 'x1502-004', '1502黑金 长矛 (5 X 5) (25支/盒) <br>1502 BLACK GOLD LANCEROS BOX PRESSED (5 X 5)', 'Non-Cuban 非古', 'cigar', '1502', '/wp-content/uploads/2024/05/01_120.jpg', '', 0.00, '323 master (1)', '323 master (1).xlsx', '', '<span id=\"docs-internal-guid-51b8ec0d-7fff-2e55-3b91-a0894067337e\"><p dir=\"ltr\" style=\"line-height:1.38;margin-top:0pt;margin-bottom:0pt\"><br></p></span>', NULL, NULL, NULL, NULL, 0),
+(8, 1, 'x1502-005', '1502黑金 完美 (9支/盒) <br>1502 BLACK GOLD PERFECTO BOX PRESSED', 'Non-Cuban 非古', 'cigar', '1502', '/wp-content/uploads/2024/05/01_806.jpg', '', 0.00, '323 master (1)', '323 master (1).xlsx', '', '', NULL, NULL, NULL, NULL, 0),
+(9, 1, 'x1502-006', '1502黑金 罗伯图 (20支/盒) <br>1502 BLACK GOLD ROBUSTO BOX PRESSED', 'Non-Cuban 非古', 'cigar', '1502', '/wp-content/uploads/2024/05/01_725.jpg', '', 0.00, '323 master (1)', '323 master (1).xlsx', '', '', NULL, NULL, NULL, NULL, 0),
+(10, 1, 'x1502-007', '1502黑金 托罗 (20支/盒) <br>1502 BLACK GOLD TORO BOX PRESSED', 'Non-Cuban 非古', 'cigar', '1502', '/wp-content/uploads/2024/05/01_799.jpg', '', 0.00, '323 master (1)', '323 master (1).xlsx', '', '', NULL, NULL, NULL, NULL, 0),
+(11, 1, 'x1502-008', '1502黑金 鱼雷 (20支/盒) <br>1502 BLACK GOLD TORPEDO BOX PRESSED', 'Non-Cuban 非古', 'cigar', '1502', '/wp-content/uploads/2024/05/01_195.jpg', '', 0.00, '323 master (1)', '323 master (1).xlsx', '', '', NULL, NULL, NULL, NULL, 0),
+(12, 1, 'x1502-009', '1502蓝宝石 长矛 (25支/盒) <br>1502 BLUE SAPPHIRE LANCEROS BOX PRESSED', 'Non-Cuban 非古', 'cigar', '1502', '/wp-content/uploads/2024/05/01_226.jpg', '', 0.00, '323 master (1)', '323 master (1).xlsx', '', '', NULL, NULL, NULL, NULL, 0),
+(13, 1, 'x1502-010', '1502蓝宝石 罗伯图 (10支/盒) <br>1502 BLUE SAPPHIRE ROBUSTO BOX PRESSED', 'Non-Cuban 非古', 'cigar', '1502', '/wp-content/uploads/2024/05/01_893.jpg', '', 0.00, '323 master (1)', '323 master (1).xlsx', '', '', NULL, NULL, NULL, NULL, 0),
+(14, 1, 'x1502-011', '1502蓝宝石 托罗 (10支/盒) <br>1502 BLUE SAPPHIRE TORO BOX PRESSED', 'Non-Cuban 非古', 'cigar', '1502', '/wp-content/uploads/2024/05/01_895.jpg', '', 0.00, '323 master (1)', '323 master (1).xlsx', '', '', NULL, NULL, NULL, NULL, 0),
+(15, 1, 'x1502-012', '1502翡翠 高朗拿 (25支/盒) <br>1502 EMERALD CORONA BOX PRESSED', 'Non-Cuban 非古', 'cigar', '1502', '/wp-content/uploads/2024/05/01_625.jpg', '', 0.00, '323 master (1)', '323 master (1).xlsx', '', '', NULL, NULL, NULL, NULL, 0),
+(16, 1, 'x1502-013', '1502翡翠 长矛 (25支/盒) <br>1502 EMERALD LANCEROS BOX PRESSED', 'Non-Cuban 非古', 'cigar', '1502', '/wp-content/uploads/2024/05/01_326.jpg', '', 0.00, '323 master (1)', '323 master (1).xlsx', '', '', NULL, NULL, NULL, NULL, 0),
+(17, 1, 'x1502-014', '1502翡翠 完美 (9支/盒) <br>1502 EMERALD PERFECTO BOX PRESSED', 'Non-Cuban 非古', 'cigar', '1502', '/wp-content/uploads/2024/05/01_42.jpg', '', 0.00, '323 master (1)', '323 master (1).xlsx', '', '', NULL, NULL, NULL, NULL, 0),
+(18, 1, 'x1502-015', '1502翡翠 罗伯图 (20支/盒) <br>1502 EMERALD ROBUSTO BOX PRESSED', 'Non-Cuban 非古', 'cigar', '1502', '/wp-content/uploads/2024/05/01_218.jpg', '', 0.00, '323 master (1)', '323 master (1).xlsx', '', '', NULL, NULL, NULL, NULL, 0),
+(19, 1, 'x1502-016', '1502翡翠 托罗 (20支/盒) <br>1502 EMERALD TORO BOX PRESSED', 'Non-Cuban 非古', 'cigar', '1502', '/wp-content/uploads/2024/05/01_294.jpg', '', 0.00, '323 master (1)', '323 master (1).xlsx', '', '', NULL, NULL, NULL, NULL, 0),
+(20, 1, 'x1502-017', '1502翡翠 鱼雷 (20支/盒) <br>1502 EMERALD TORPEDO BOX PRESSED', 'Non-Cuban 非古', 'cigar', '1502', '/wp-content/uploads/2024/05/01_305.jpg', '', 0.00, '323 master (1)', '323 master (1).xlsx', '', '', NULL, NULL, NULL, NULL, 0),
+(21, 1, 'x1502-018', '1502尼加拉瓜 丘吉尔 (20支/盒) <br>1502 NICARAGUA CHURCHILL BOX PRESSED', 'Non-Cuban 非古', 'cigar', '1502', '/wp-content/uploads/2024/05/01_902.jpg', '', 0.00, '323 master (1)', '323 master (1).xlsx', '', '', NULL, NULL, NULL, NULL, 0),
+(22, 1, 'x1502-019', '1502尼加拉瓜 罗伯图 (30支/盒) <br>1502 NICARAGUA ROBUSTO BOX PRESSED 1502', 'Non-Cuban 非古', 'cigar', '1502', '/wp-content/uploads/2024/05/01_908.jpg', '', 0.00, '323 master (1)', '323 master (1).xlsx', '', '', NULL, NULL, NULL, NULL, 0),
+(23, 1, 'x1502-020', '1502红宝石 高朗拿 (25支/盒) <br>1502 RUBY CORONA BOX PRESSED', 'Non-Cuban 非古', 'cigar', '1502', '/wp-content/uploads/2024/05/01_807.jpg', '', 0.00, '323 master (1)', '323 master (1).xlsx', '', '', NULL, NULL, NULL, NULL, 0),
+(24, 1, 'x1502-021', '1502红宝石 长矛 (25支/盒) <br>1502 RUBY LANCEROS BOX PRESSED', 'Non-Cuban 非古', 'cigar', '1502', '/wp-content/uploads/2024/05/01_51.jpg', '', 0.00, '323 master (1)', '323 master (1).xlsx', '', '', NULL, NULL, NULL, NULL, 0),
+(25, 1, 'x1502-022', '1502红宝石 完美 (9支/盒) <br>1502 RUBY PERFECTO BOX PRESSED', 'Non-Cuban 非古', 'cigar', '1502', '/wp-content/uploads/2024/05/01_501.jpg', '', 0.00, '323 master (1)', '323 master (1).xlsx', '', '', NULL, NULL, NULL, NULL, 0),
+(26, 1, 'x1502-023', '1502红宝石 罗伯图 (20支/盒) <br>1502 RUBY ROBUSTO BOX PRESSED', 'Non-Cuban 非古', 'cigar', '1502', '/wp-content/uploads/2024/05/01_750.jpg', '', 0.00, '323 master (1)', '323 master (1).xlsx', '', '', NULL, NULL, NULL, NULL, 0),
+(27, 1, 'x1502-024', '1502红宝石 托罗 (20支/盒) <br>1502 RUBY TORO BOX PRESSED', 'Non-Cuban 非古', 'cigar', '1502', '/wp-content/uploads/2024/05/01_809.jpg', '', 0.00, '323 master (1)', '323 master (1).xlsx', '', '', NULL, NULL, NULL, NULL, 0),
+(28, 1, 'x1502-025', '1502红宝石 鱼雷 (20支/盒) <br>1502 RUBY TORPEDO BOX PRESSED', 'Non-Cuban 非古', 'cigar', '1502', '/wp-content/uploads/2024/05/01_306.jpg', '', 0.00, '323 master (1)', '323 master (1).xlsx', '', '', NULL, NULL, NULL, NULL, 0),
+(29, 1, 'AG001', '夸特尼加拉瓜传情 (20支/盒) <BR>AGING ROOM QUATTRO NICARAGUA ESPRESSIVO AGING ROOMAR', 'Non-Cuban 非古', 'cigar', 'AGING ROOM', '/wp-content/uploads/2024/05/01_868-2.jpg', '', 0.00, '323 master (1)', '323 master (1).xlsx', '', '', NULL, NULL, NULL, NULL, 0),
+(30, 1, 'AG002', '夸特尼加拉瓜大师 (20支/盒) <BR>AGING ROOM QUATTRO NICARAGUA MAESTRO AGING ROOMAR', 'Non-Cuban 非古', 'cigar', 'AGING ROOM', '/wp-content/uploads/2024/05/01_367-01_216.jpg', '', 0.00, '323 master (1)', '323 master (1).xlsx', '', '', NULL, NULL, NULL, NULL, 0),
+(31, 1, 'AG003', '夸特尼加拉瓜共鸣 (20支/盒) <BR>AGING ROOM QUATTRO NICARAGUA VIBRATO AGING ROOMAR', 'Non-Cuban 非古', 'cigar', 'AGING ROOM', '/wp-content/uploads/2024/05/01_367-3.jpg', '', 0.00, '323 master (1)', '323 master (1).xlsx', '', '', NULL, NULL, NULL, NULL, 0),
+(32, 1, 'AJF001', 'AJ费尔南德斯5支装托罗 (2 X 5支/盒) <BR>AJ FERNANDEZ F 5 PACK TORO', 'Non-Cuban 非古', 'cigar', 'AJ 费尔南德斯 AJ FERNANDEZ', '/wp-content/uploads/2024/05/AJ20Fernandez20AJF20520Pack20Toro202x5s_549.jpg', '', 0.00, '323 master (1)', '323 master (1).xlsx', '', '', NULL, NULL, NULL, NULL, 0),
+(33, 1, 'AJF002', 'AJ费尔南德斯贝拉斯·阿尔特斯混型戈多 (20支/盒) <BR>AJ FERNANDEZ BELLAS ARTES HYBRID GORDO', 'Non-Cuban 非古', 'cigar', 'AJ 费尔南德斯 AJ FERNANDEZ', '/wp-content/uploads/2024/05/AJ20Fernandez20Bellas20Artes20Hybrid20Gordo2020s20BN2001_895.jpg', '', 0.00, '323 master (1)', '323 master (1).xlsx', '', '', NULL, NULL, NULL, NULL, 0),
+(34, 1, 'AJF003', 'AJ费尔南德斯贝拉斯·阿尔特斯混型罗伯图 (20支/盒) <BR>AJ FERNANDEZ BELLAS ARTES HYBRID ROBUSTO', 'Non-Cuban 非古', 'cigar', 'AJ 费尔南德斯 AJ FERNANDEZ', '/wp-content/uploads/2024/05/AJ20Fernandez20Bellas20Artes20Hybrid20Robusto2020s20BN2002_596.jpg', '', 0.00, '323 master (1)', '323 master (1).xlsx', '', '', NULL, NULL, NULL, NULL, 0),
+(35, 1, 'AJF004', 'AJ费尔南德斯贝拉斯·阿尔特斯混型短丘吉尔 (20支/盒) <BR>AJ FERNANDEZ BELLAS ARTES HYBRID SHORT CHURCHILL', 'Non-Cuban 非古', 'cigar', 'AJ 费尔南德斯 AJ FERNANDEZ', '/wp-content/uploads/2024/05/AJ20Fernandez20Bellas20Artes20Hybrid20Short20Churchill2020s20BN2001_249.jpg', '', 0.00, '323 master (1)', '323 master (1).xlsx', '', '', NULL, NULL, NULL, NULL, 0),
+(36, 1, 'AJF005', 'AJ费尔南德斯贝拉斯·阿尔特斯混型托罗 (20支/盒) <BR>AJ FERNANDEZ BELLAS ARTES HYBRID TORO', 'Non-Cuban 非古', 'cigar', 'AJ 费尔南德斯 AJ FERNANDEZ', '/wp-content/uploads/2024/05/AJ20Fernandez20Bellas20Artes20Hybrid20Toro2020s20BN20CJ922002_297.jpg', '', 0.00, '323 master (1)', '323 master (1).xlsx', '', '', NULL, NULL, NULL, NULL, 0),
+(37, 1, 'AJF006', 'AJ费尔南德斯贝拉斯·阿尔特斯马杜罗长茅 (10支/盒) <BR>AJ FERNANDEZ BELLAS ARTES MADURO LANCERO', 'Non-Cuban 非古', 'cigar', 'AJ 费尔南德斯 AJ FERNANDEZ', '/wp-content/uploads/2024/05/AJ-Fernandez-Bellas-Artes-Maduro-Lancero-10s-BN-a_669.jpg', '', 0.00, '323 master (1)', '323 master (1).xlsx', '', '', NULL, NULL, NULL, NULL, 0),
+(38, 1, 'AJF007', 'AJ费尔南德斯贝拉斯·阿尔特斯马杜罗罗伯图 (20支/盒) <BR>AJ FERNANDEZ BELLAS ARTES MADURO ROBUSTO', 'Non-Cuban 非古', 'cigar', 'AJ 费尔南德斯 AJ FERNANDEZ', '/wp-content/uploads/2024/05/AJ20Fernandez20Bellas20Artes20Maduro20Robusto2020s20BN2001_700.jpg', '', 0.00, '323 master (1)', '323 master (1).xlsx', '', '', NULL, NULL, NULL, NULL, 0),
+(39, 1, 'AJF008', 'AJ费尔南德斯贝拉斯·阿尔特斯马杜罗托罗 (20支/盒) <BR>AJ FERNANDEZ BELLAS ARTES MADURO TORO', 'Non-Cuban 非古', 'cigar', 'AJ 费尔南德斯 AJ FERNANDEZ', '/wp-content/uploads/2024/05/AJ20Fernandez20Bellas20Artes20Maduro20Toro2020s20BN2004_479.jpg', '', 0.00, '323 master (1)', '323 master (1).xlsx', '', '', NULL, NULL, NULL, NULL, 0),
+(40, 1, 'AJF009', 'AJ费尔南德斯混合 15 罗伯图 (15支/盒) <br>AJ FERNANDEZ BLEND 15 ROBUSTO', 'Non-Cuban 非古', 'cigar', 'AJ 费尔南德斯 AJ FERNANDEZ', '/wp-content/uploads/2024/05/Normal-01_286.jpg', '', 0.00, '323 master (1)', '323 master (1).xlsx', '', '', NULL, NULL, NULL, NULL, 0),
+(41, 1, 'AJF010', 'AJ费尔南德斯混合 15 罗伯图 (2 x 15支/盒) <BR>AJ FERNANDEZ BLEND 15 ROBUSTO', 'Non-Cuban 非古', 'cigar', 'AJ 费尔南德斯 AJ FERNANDEZ', '/wp-content/uploads/2024/05/AJ20Fernandez20Blend201520Bundle20Robusto2015s_01_234.jpg', '', 0.00, '323 master (1)', '323 master (1).xlsx', '', '', NULL, NULL, NULL, NULL, 0),
+(42, 1, 'AJF011', 'AJ费尔南德斯混合 15 短罗伯图 (30支/盒) <BR>AJ FERNANDEZ BLEND 15 SHORT ROBUSTO', 'Non-Cuban 非古', 'cigar', 'AJ 费尔南德斯 AJ FERNANDEZ', '/wp-content/uploads/2024/05/Short-01_40.jpg', '', 0.00, '323 master (1)', '323 master (1).xlsx', '', '', NULL, NULL, NULL, NULL, 0),
+(43, 1, 'AJF012', 'AJ费尔南德斯混合 15 短罗伯图 (2 x 15支/盒) <BR>AJ FERNANDEZ BLEND 15 SHORT ROBUSTO', 'Non-Cuban 非古', 'cigar', 'AJ 费尔南德斯 AJ FERNANDEZ', '/wp-content/uploads/2024/05/AJ20Fernandez20Blend201520Bundle20Short20Robusto2015s_01_18.jpg', '', 0.00, '323 master (1)', '323 master (1).xlsx', '', '', NULL, NULL, NULL, NULL, 0),
+(44, 1, 'AJF013', 'AJ费尔南德斯混合 15 托罗 (30支/盒) <BR>AJ FERNANDEZ BLEND 15 TORO', 'Non-Cuban 非古', 'cigar', 'AJ 费尔南德斯 AJ FERNANDEZ', '/wp-content/uploads/2024/05/long-01_327.jpg', '', 0.00, '323 master (1)', '323 master (1).xlsx', '', '', NULL, NULL, NULL, NULL, 0),
+(45, 1, 'AJF014', 'AJ费尔南德斯混合 15 托罗 (15支/盒) <br>AJ FERNANDEZ BLEND 15 TORO', 'Non-Cuban 非古', 'cigar', 'AJ 费尔南德斯 AJ FERNANDEZ', '/wp-content/uploads/2024/05/AJ20Fernandez20Blend201520Bundle20Toro2015s_01_620.jpg', '', 0.00, '323 master (1)', '323 master (1).xlsx', '', '', NULL, NULL, NULL, NULL, 0),
+(46, 1, 'AJF015', 'AJ费尔南德斯迪亚斯德格洛里亚戈多 (20支/盒) <BR>AJ FERNANDEZ DIAS DE GLORIA GORDO', 'Non-Cuban 非古', 'cigar', 'AJ 费尔南德斯 AJ FERNANDEZ', '/wp-content/uploads/2024/05/AJ20Fernandez20Dias20De20Gloria20Gordo2020s20BOX2001_682.jpg', '', 0.00, '323 master (1)', '323 master (1).xlsx', '', '', NULL, NULL, NULL, NULL, 0),
+(47, 1, 'AJF016', 'AJ费尔南德斯迪亚斯德格洛里亚罗伯图 (20支/盒) <BR>AJ FERNANDEZ DIAS DE GLORIA ROBUSTO', 'Non-Cuban 非古', 'cigar', 'AJ 费尔南德斯 AJ FERNANDEZ', '/wp-content/uploads/2024/05/AJ20Fernandez20Dias20De20Gloria20Robusto2020s20BOX2001_206.jpg', '', 0.00, '323 master (1)', '323 master (1).xlsx', '', '', NULL, NULL, NULL, NULL, 0),
+(48, 1, 'AJF017', 'AJ费尔南德斯迪亚斯德格洛里亚短丘吉尔 (20支/盒) <BR>AJ FERNANDEZ DIAS DE GLORIA SHORT CHURCHILL', 'Non-Cuban 非古', 'cigar', 'AJ 费尔南德斯 AJ FERNANDEZ', '/wp-content/uploads/2024/05/AJ20Fernandez20Dias20De20Gloria20Short20Churchill2020s20BOX2001_850.jpg', '', 0.00, '323 master (1)', '323 master (1).xlsx', '', '', NULL, NULL, NULL, NULL, 0),
+(49, 1, 'AJF018', 'AJ费尔南德斯迪亚斯德格洛里亚托罗 (20支/盒) <BR>AJ FERNANDEZ DIAS DE GLORIA TORO', 'Non-Cuban 非古', 'cigar', 'AJ 费尔南德斯 AJ FERNANDEZ', '/wp-content/uploads/2024/05/AJ20Fernandez20Dias20De20Gloria20Toro2020s20BOX2000_512.jpg', '', 0.00, '323 master (1)', '323 master (1).xlsx', '', '', NULL, NULL, NULL, NULL, 0),
+(50, 1, 'AJF019', 'AJ费尔南德斯飞地阔叶丘吉尔 (20支/盒) <BR>AJ FERNANDEZ ENCLAVE BROADLEAF CHURCHILL', 'Non-Cuban 非古', 'cigar', 'AJ 费尔南德斯 AJ FERNANDEZ', '/wp-content/uploads/2024/05/01_601-2.jpg', '', 0.00, '323 master (1)', '323 master (1).xlsx', '', '', NULL, NULL, NULL, NULL, 0),
+(51, 1, 'AJF020', 'AJ费尔南德斯飞地阔叶罗伯图 (20支/盒) <BR>AJ FERNANDEZ ENCLAVE BROADLEAF ROBUSTO', 'Non-Cuban 非古', 'cigar', 'AJ 费尔南德斯 AJ FERNANDEZ', '/wp-content/uploads/2024/05/01_311-2.jpg', '', 0.00, '323 master (1)', '323 master (1).xlsx', '', '', NULL, NULL, NULL, NULL, 0),
+(52, 1, 'AJF021', 'AJ费尔南德斯飞地阔叶托罗 (20支/盒) <BR>AJ FERNANDEZ ENCLAVE BROADLEAF TORO', 'Non-Cuban 非古', 'cigar', 'AJ 费尔南德斯 AJ FERNANDEZ', '/wp-content/uploads/2024/05/01_611-3.jpg', '', 0.00, '323 master (1)', '323 master (1).xlsx', '', '', NULL, NULL, NULL, NULL, 0),
+(53, 1, 'AJF022', 'AJ费尔南德斯昂科雷康涅狄格洲双尖鱼雷 (20支/盒) <BR>AJ FERNANDEZ ENCLAVE CONNECTICUT FIGURADO', 'Non-Cuban 非古', 'cigar', 'AJ 费尔南德斯 AJ FERNANDEZ', '/wp-content/uploads/2024/05/AJ-Fernandez-Enclave-Connecticut-Figurado-20s-BN-a_846.jpg', '', 0.00, '323 master (1)', '323 master (1).xlsx', '', '', NULL, NULL, NULL, NULL, 0),
+(54, 1, 'AJF023', 'AJ费尔南德斯昂科雷康涅狄格洲罗伯图 (20支/盒) <BR>AJ FERNANDEZ ENCLAVE CONNECTICUT ROBUSTO', 'Non-Cuban 非古', 'cigar', 'AJ 费尔南德斯 AJ FERNANDEZ', '/wp-content/uploads/2024/05/AJ-Fernandez-Enclave-Connecticut-Robusto-20s-BN-a_124.jpg', '', 0.00, '323 master (1)', '323 master (1).xlsx', '', '', NULL, NULL, NULL, NULL, 0),
+(55, 1, 'AJF024', 'AJ费尔南德斯昂科雷康涅狄格洲托罗 (20支/盒) <BR>AJ FERNANDEZ ENCLAVE CONNECTICUT TORO', 'Non-Cuban 非古', 'cigar', 'AJ 费尔南德斯 AJ FERNANDEZ', '/wp-content/uploads/2024/05/AJ-Fernandez-Enclave-Connecticut-Toro-20s-BN-a_610.jpg', '', 0.00, '323 master (1)', '323 master (1).xlsx', '', '', NULL, NULL, NULL, NULL, 0),
+(56, 1, 'AJF025', 'AJ费尔南德斯昂科雷哈瓦那丘吉尔 (20支/盒) <BR>AJ FERNANDEZ ENCLAVE HABANO CHURCHILL', 'Non-Cuban 非古', 'cigar', 'AJ 费尔南德斯 AJ FERNANDEZ', '/wp-content/uploads/2024/05/01_169-1.jpg', '', 0.00, '323 master (1)', '323 master (1).xlsx', '', '', NULL, NULL, NULL, NULL, 0),
