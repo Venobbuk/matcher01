@@ -1,0 +1,615 @@
+
+/**
+ * KT Cigar Helper - Common utility functions for cigar-related operations
+ * Version: 1.0.0
+ */
+
+// Exit if accessed directly
+if (!defined("ABSPATH")) {
+    exit;
+}
+
+class KT_Cigar_Helper {
+    /**
+     * Clean and normalize a product title
+     * 
+     * @param string $title Original title
+     * @return string Normalized title
+     */
+    public static function normalize_title($title) {
+        // Convert to lowercase
+        $title = mb_strtolower(trim($title));
+        
+        // Remove common noise words and characters
+        $noise_words = array(
+            'cigar', 'cigars', 'cigarillo', 'cigarillos',
+            'original', 'genuine', 'authentic', 'official',
+            'new', 'brand', 'box', 'pack', 'tube', 'tubos',
+            'limited', 'edition', 'special', 'exclusive',
+            'premium', 'classic', 'traditional', 'collection'
+        );
+        
+        // Replace noise words with spaces
+        foreach ($noise_words as $word) {
+            $title = preg_replace('/\b' . preg_quote($word, '/') . '\b/i', ' ', $title);
+        }
+        
+        // Remove special characters
+        $title = preg_replace('/[^\p{L}\p{N}\s\-]/u', ' ', $title);
+        
+        // Replace multiple spaces with a single space
+        $title = preg_replace('/\s+/', ' ', $title);
+        
+        return trim($title);
+    }
+    
+    /**
+     * Extract Chinese characters from a string
+     * 
+     * @param string $string Input string
+     * @return array Extracted Chinese characters
+     */
+    public static function extract_chinese_characters($string) {
+        $result = array();
+        
+        // Match Chinese characters
+        preg_match_all('/[\x{4e00}-\x{9fa5}]+/u', $string, $matches);
+        
+        if (!empty($matches[0])) {
+            foreach ($matches[0] as $match) {
+                $result[] = $match;
+            }
+        }
+        
+        return $result;
+    }
+    
+    /**
+     * Get best match between supplier title and database product
+     * 
+     * @param string $supplier_title Supplier product title
+     * @param array $db_products Array of database products
+     * @return array Best match information
+     */
+    public static function get_best_match($supplier_title, $db_products) {
+        if (empty($supplier_title) || empty($db_products)) {
+            return array(
+                'product' => null,
+                'score' => 0,
+                'matched_terms' => array()
+            );
+        }
+        
+        $best_match = null;
+        $best_score = 0;
+        $matched_terms = array();
+        
+        // Process supplier title
+        $supplier_processed = KT_Cigar_Mappings::process_supplier_product($supplier_title);
+        $supplier_title_normalized = self::normalize_title($supplier_title);
+        $supplier_terms = explode(' ', $supplier_title_normalized);
+        
+        foreach ($db_products as $product) {
+            $db_title_normalized = self::normalize_title($product->product_title);
+            $db_terms = explode(' ', $db_title_normalized);
+            
+            // Calculate match score
+            $score = 0;
+            $current_matched_terms = array();
+            
+            // Brand match (highest weight)
+            if (!empty($supplier_processed['brand']) && !empty($product->brand)) {
+                if (mb_strtolower($supplier_processed['brand']) === mb_strtolower($product->brand)) {
+                    $score += 40;
+                    $current_matched_terms[] = "BRAND:" . $product->brand;
+                }
+            }
+            
+            // Vitola match
+            if (!empty($supplier_processed['vitola'])) {
+                if (stripos($db_title_normalized, $supplier_processed['vitola']) !== false) {
+                    $score += 20;
+                    $current_matched_terms[] = "VITOLA:" . $supplier_processed['vitola'];
+                }
+            }
+            
+            // Dimensions match
+            if (!empty($supplier_processed['dimension_info']['ring_gauge']) && 
+                !empty($supplier_processed['dimension_info']['length']) && 
+                !empty($product->seat_row) && !empty($product->seat_number)) {
+                
+                $ring_diff = abs((float)$supplier_processed['dimension_info']['ring_gauge'] - (float)$product->seat_row);
+                $length_diff = abs((float)$supplier_processed['dimension_info']['length'] - (float)$product->seat_number);
+                
+                if ($ring_diff <= 2 && $length_diff <= 10) {
+                    $score += 20;
+                    $current_matched_terms[] = "DIM:" . $product->seat_row . "/" . $product->seat_number;
+                }
+            }
+            
+            // Term match
+            $term_matches = 0;
+            foreach ($supplier_terms as $term) {
+                if (strlen($term) >= 3 && in_array($term, $db_terms)) {
+                    $term_matches++;
+                    if (!in_array($term, $current_matched_terms)) {
+                        $current_matched_terms[] = $term;
+                    }
+                }
+            }
+            
+            $score += min(20, $term_matches * 5);
+            
+            // Update best match if needed
+            if ($score > $best_score) {
+                $best_score = $score;
+                $best_match = $product;
+                $matched_terms = $current_matched_terms;
+            }
+        }
+        
+        return array(
+            'product' => $best_match,
+            'score' => $best_score,
+            'matched_terms' => $matched_terms
+        );
+    }
+    
+    /**
+     * Split a text into semantic units (words and Chinese characters)
+     * 
+     * @param string $text Input text
+     * @return array Array of semantic units
+     */
+    public static function split_into_semantic_units($text) {
+        $units = array();
+        
+        // Extract Chinese characters
+        $chinese_chars = self::extract_chinese_characters($text);
+        
+        if (!empty($chinese_chars)) {
+            // If Chinese characters are found, process them first
+            foreach ($chinese_chars as $chars) {
+                $text = str_replace($chars, ' ' . $chars . ' ', $text);
+            }
+        }
+        
+        // Split by spaces
+        $parts = preg_split('/\s+/', $text);
+        
+        foreach ($parts as $part) {
+            $part = trim($part);
+            if (strlen($part) > 0) {
+                $units[] = $part;
+            }
+        }
+        
+        return $units;
+    }
+    
+    /**
+     * Calculate Levenshtein distance with normalization
+     * 
+     * @param string $str1 First string
+     * @param string $str2 Second string
+     * @return float Normalized distance (0-1, where 0 is identical)
+     */
+    public static function normalized_levenshtein($str1, $str2) {
+        $str1 = mb_strtolower(trim($str1));
+        $str2 = mb_strtolower(trim($str2));
+        
+        $lev = levenshtein($str1, $str2);
+        $max_len = max(mb_strlen($str1), mb_strlen($str2));
+        
+        if ($max_len === 0) {
+            return 0;
+        }
+        
+        return 1 - ($lev / $max_len);
+    }
+    
+    /**
+     * Find similar words using Levenshtein distance
+     * 
+     * @param string $word Word to find similar matches for
+     * @param array $word_list Array of words to search in
+     * @param float $threshold Similarity threshold (0-1)
+     * @return array Similar words
+     */
+    public static function find_similar_words($word, $word_list, $threshold = 0.8) {
+        $similar_words = array();
+        
+        foreach ($word_list as $candidate) {
+            $similarity = self::normalized_levenshtein($word, $candidate);
+            
+            if ($similarity >= $threshold) {
+                $similar_words[] = array(
+                    'word' => $candidate,
+                    'similarity' => $similarity
+                );
+            }
+        }
+        
+        // Sort by similarity (highest first)
+        usort($similar_words, function($a, $b) {
+            return $b['similarity'] <=> $a['similarity'];
+        });
+        
+        return $similar_words;
+    }
+    
+    /**
+     * Check if a string contains any Chinese characters
+     * 
+     * @param string $string Input string
+     * @return bool True if contains Chinese characters, false otherwise
+     */
+    public static function has_chinese_characters($string) {
+        return preg_match('/[\x{4e00}-\x{9fa5}]/u', $string) === 1;
+    }
+    
+    /**
+     * Format dimensions in a standardized way
+     * 
+     * @param string|int $ring_gauge Ring gauge
+     * @param string|int $length Length
+     * @return string Formatted dimensions
+     */
+    public static function format_dimensions($ring_gauge, $length) {
+        if (empty($ring_gauge) || empty($length)) {
+            return '';
+        }
+        
+        return $ring_gauge . '/' . $length;
+    }
+    
+   /**
+     * Parse dimensions from a string
+     * 
+     * @param string $dimensions Dimensions string
+     * @return array Array with ring_gauge and length
+     */
+    public static function parse_dimensions($dimensions) {
+        $result = array(
+            'ring_gauge' => null,
+            'length' => null
+        );
+        
+        // Handle "RG/LENGTH" format
+        if (strpos($dimensions, '/') !== false) {
+            $parts = explode('/', $dimensions);
+            if (count($parts) == 2) {
+                $result['ring_gauge'] = trim($parts[0]);
+                $result['length'] = trim($parts[1]);
+                return $result;
+            }
+        }
+        
+        // Handle "LENGTH x RG" format
+        if (preg_match('/(\d+)\s*[xX×*]\s*(\d+)/', $dimensions, $matches)) {
+            $first_num = intval($matches[1]);
+            $second_num = intval($matches[2]);
+            
+            // Determine which is ring gauge and which is length
+            if ($first_num > $second_num && $second_num >= 20 && $second_num <= 70) {
+                $result['length'] = $first_num;
+                $result['ring_gauge'] = $second_num;
+            } else if ($second_num > $first_num && $first_num >= 20 && $first_num <= 70) {
+                $result['length'] = $second_num;
+                $result['ring_gauge'] = $first_num;
+            } else {
+                // Default assumption (most common format: length*ring)
+                $result['length'] = $first_num;
+                $result['ring_gauge'] = $second_num;
+            }
+            
+            return $result;
+        }
+        
+        return $result;
+    }
+    
+    /**
+     * Detect product type from title and description
+     * 
+     * @param string $title Product title
+     * @param string $description Product description (optional)
+     * @return string Product type
+     */
+    public static function detect_product_type($title, $description = "") {
+        $title_lower = mb_strtolower($title);
+        $desc_lower = mb_strtolower($description);
+        
+        // Check for accessories
+        $accessory_words = array('cutter', 'lighter', 'ashtray', 'humidor', 'case', 'punch');
+        foreach ($accessory_words as $word) {
+            if (strpos($title_lower, $word) !== false || strpos($desc_lower, $word) !== false) {
+                return 'accessory';
+            }
+        }
+        
+        // Check for cigarettes
+        $cigarette_words = array('cigarette', '香烟', 'filter', 'filters');
+        foreach ($cigarette_words as $word) {
+            if (strpos($title_lower, $word) !== false || strpos($desc_lower, $word) !== false) {
+                return 'cigarette';
+            }
+        }
+        
+        // Default to cigar
+        return 'cigar';
+    }
+    
+    /**
+     * Filter common noise words from title
+     * 
+     * @param string $title Product title
+     * @return string Filtered title
+     */
+    public static function filter_noise_words($title) {
+        $common_filter_words = array(
+            "盒", "盒装", "box", "装", "只", "支", "五只", "五支", "三只", "三支", 
+            "四只", "四支", "pcs", "片", "条", "整盒", "整箱", "带盒", "带管", 
+            "铝管装", "礼盒", "普通装", "单支", "裸支", "非卖品", "定制", "茄", 
+            "雪茄", "cigar", "cigars", "烟", "单盒", "高端", "限量", "限定", "特殊", 
+            "特制", "精选", "厂家", "正品", "产品", "精美", "小", "大", "中号", "特号", 
+            "产地", "古巴", "古代", "cuba", "全球", "包邮", "正品", "原装", "现货", 
+            "新品", "无盒", "年", "年份", "打火机"
+        );
+        
+        $title_lower = mb_strtolower($title);
+        
+        foreach ($common_filter_words as $word) {
+            // Replace the word with a space
+            $title_lower = str_replace($word, ' ', $title_lower);
+        }
+        
+        // Replace multiple spaces with a single space
+        $title_lower = preg_replace('/\s+/', ' ', $title_lower);
+        
+        return trim($title_lower);
+    }
+    
+    /**
+     * Extract meaningful terms from a product title
+     * 
+     * @param string $title Product title
+     * @return array Array of meaningful terms
+     */
+    public static function extract_terms($title) {
+        // First, normalize the title
+        $normalized_title = self::normalize_title($title);
+        
+        // Filter common noise words
+        $filtered_title = self::filter_noise_words($normalized_title);
+        
+        // Check if title contains Chinese characters
+        $has_chinese = self::has_chinese_characters($filtered_title);
+        
+        $terms = array();
+        
+        if ($has_chinese) {
+            // For Chinese titles, extract Chinese character sequences
+            preg_match_all('/[\x{4e00}-\x{9fa5}]{2,}/u', $filtered_title, $chinese_matches);
+            if (!empty($chinese_matches[0])) {
+                foreach ($chinese_matches[0] as $match) {
+                    $terms[] = $match;
+                }
+            }
+            
+            // Also extract English words
+            preg_match_all('/[a-zA-Z0-9]{3,}/u', $filtered_title, $english_matches);
+            if (!empty($english_matches[0])) {
+                foreach ($english_matches[0] as $match) {
+                    if (!in_array(strtolower($match), ['the', 'and', 'for', 'with'])) {
+                        $terms[] = $match;
+                    }
+                }
+            }
+        } else {
+            // For English titles, split by spaces
+            $words = explode(' ', $filtered_title);
+            foreach ($words as $word) {
+                $word = trim($word);
+                if (strlen($word) >= 3 && !in_array(strtolower($word), ['the', 'and', 'for', 'with'])) {
+                    $terms[] = $word;
+                }
+            }
+        }
+        
+        // Add dimension patterns if found
+        if (preg_match('/(\d+)\s*[xX×*\/]\s*(\d+)/', $title, $matches)) {
+            $terms[] = $matches[0];
+        }
+        
+        // Add count patterns if found
+        if (preg_match('/(\d+)\s*(?:支|pcs|个|count|ct|-count)/ui', $title, $matches)) {
+            $terms[] = $matches[0];
+        }
+        
+        // De-duplicate terms
+        return array_values(array_unique($terms));
+    }
+    
+    /**
+     * Convert dimension values between different units
+     * 
+     * @param float $value Value to convert
+     * @param string $from_unit Unit to convert from
+     * @param string $to_unit Unit to convert to
+     * @return float Converted value
+     */
+    public static function convert_dimension($value, $from_unit, $to_unit) {
+        // Supported units: mm, cm, inch
+        if ($from_unit === $to_unit) {
+            return $value;
+        }
+        
+        // Convert to mm first (as base unit)
+        $value_in_mm = $value;
+        
+        switch ($from_unit) {
+            case 'cm':
+                $value_in_mm = $value * 10;
+                break;
+            case 'inch':
+                $value_in_mm = $value * 25.4;
+                break;
+        }
+        
+        // Convert from mm to target unit
+        switch ($to_unit) {
+            case 'mm':
+                return $value_in_mm;
+            case 'cm':
+                return $value_in_mm / 10;
+            case 'inch':
+                return $value_in_mm / 25.4;
+            default:
+                return $value_in_mm;
+        }
+    }
+    
+    /**
+     * Check if a title contains packaging information
+     * 
+     * @param string $title Product title
+     * @return array Packaging information
+     */
+    public static function extract_packaging_info($title) {
+        $result = array(
+            'has_packaging' => false,
+            'type' => null,
+            'count' => null
+        );
+        
+        $title_lower = mb_strtolower($title);
+        
+        // Check for box
+        if (strpos($title_lower, 'box') !== false || 
+            strpos($title_lower, '盒') !== false ||
+            strpos($title_lower, '盒装') !== false) {
+            $result['has_packaging'] = true;
+            $result['type'] = 'box';
+        }
+        
+        // Check for tube
+        else if (strpos($title_lower, 'tube') !== false || 
+                strpos($title_lower, 'tubo') !== false ||
+                strpos($title_lower, '管装') !== false ||
+                strpos($title_lower, '铝管') !== false) {
+            $result['has_packaging'] = true;
+            $result['type'] = 'tube';
+        }
+        
+        // Check for pack
+        else if (strpos($title_lower, 'pack') !== false || 
+                strpos($title_lower, '装') !== false) {
+            $result['has_packaging'] = true;
+            $result['type'] = 'pack';
+        }
+        
+        // Check for count
+        if (preg_match('/(\d+)\s*(?:支|只|个|pcs|count|ct|-count)/ui', $title, $matches)) {
+            $result['count'] = intval($matches[1]);
+        }
+        // Check for "box of X" pattern
+        else if (preg_match('/box\s+of\s+(\d+)/i', $title, $matches)) {
+            $result['count'] = intval($matches[1]);
+        }
+        
+        return $result;
+    }
+    
+    /**
+     * Categorize a keyword based on its content and context
+     * 
+     * @param string $keyword Keyword to categorize
+     * @param array $product_data Product data for context
+     * @return string Category
+     */
+    public static function categorize_keyword($keyword, $product_data = array()) {
+        // Check for tagged keywords
+        if (preg_match('/^([A-Z_]+):(.+)$/i', $keyword, $matches)) {
+            $tag = strtoupper($matches[1]);
+            
+            switch ($tag) {
+                case 'BRAND': return 'brand';
+                case 'SERIES': return 'model';
+                case 'VITOLA': return 'vitola';
+                case 'SPECIAL': return 'special_edition';
+                case 'YEAR': return 'year';
+                case 'COUNT': return 'count';
+                case 'DIM': return 'dimensions';
+                case 'PACK': return 'packaging';
+                default: return 'generic';
+            }
+        }
+        
+        $keyword_lower = strtolower(trim($keyword));
+        
+        // Check for clear dimension patterns
+        if (preg_match('/(\d+)\s*[xX×*\/]\s*(\d+)/', $keyword_lower) ||
+            preg_match('/^(\d+)\/(\d+)$/', $keyword_lower)) {
+            return 'dimensions';
+        }
+        
+        // Check for clear count patterns
+        if (preg_match('/^(\d+)-Count(?:\s+box)?$/i', $keyword_lower) || 
+            preg_match('/^Count:\s+(\d+)$/i', $keyword_lower) ||
+            preg_match('/^(\d+)支\/盒$/', $keyword_lower) ||
+            preg_match('/^(\d+)支装$/', $keyword_lower)) {
+            return 'count';
+        }
+        
+        // Check for year pattern
+        if (preg_match('/^(19|20)\d{2}$/', $keyword_lower)) {
+            return 'year';
+        }
+        
+        // Check against product data for context
+        if (!empty($product_data)) {
+            // Check if it matches the brand
+            if (!empty($product_data['brand']) && 
+                (stripos($keyword_lower, strtolower($product_data['brand'])) !== false || 
+                 stripos(strtolower($product_data['brand']), $keyword_lower) !== false)) {
+                return 'brand';
+            }
+            
+            // Check if it matches the model/series
+            if (!empty($product_data['model']) && 
+                (stripos($keyword_lower, strtolower($product_data['model'])) !== false || 
+                 stripos(strtolower($product_data['model']), $keyword_lower) !== false)) {
+                return 'model';
+            }
+            
+            // Check if it matches the vitola
+            if (!empty($product_data['vitola']) && 
+                (stripos($keyword_lower, strtolower($product_data['vitola'])) !== false || 
+                 stripos(strtolower($product_data['vitola']), $keyword_lower) !== false)) {
+                return 'vitola';
+            }
+        }
+        
+        // Check for special edition terms
+        $special_edition_terms = ['limited', 'edition', 'special', 'anniversary', 'reserva', 
+                               '限量版', '纪念版', '周年', '特别版', '特制版'];
+        foreach ($special_edition_terms as $term) {
+            if (stripos($keyword_lower, $term) !== false) {
+                return 'special_edition';
+            }
+        }
+        
+        // Check for packaging terms
+        $packaging_terms = ['box', 'tube', 'pack', 'jar', 'case', 'cabinet', 
+                         '盒', '盒装', '管装', '铝管', '礼盒'];
+        foreach ($packaging_terms as $term) {
+            if (stripos($keyword_lower, $term) !== false) {
+                return 'packaging';
+            }
+        }
+        
+        // Default to generic
+        return 'generic';
+    }
+}
