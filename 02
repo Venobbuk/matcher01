@@ -1,0 +1,2307 @@
+
+
+/**
+ * KT Cigar Mappings - Advanced Hybrid Matching System
+ * Version: 10.0 - Complete rewrite with hybrid approach + semantic matching
+ * Fully integrated with data file structure - no hardcoded patterns
+ */
+
+// Exit if accessed directly
+if (!defined("ABSPATH")) {
+    exit;
+}
+
+class KT_Cigar_Debug {
+    public static function log($message) {
+        if (!defined('KT_DEBUG') || !KT_DEBUG) {
+            return;
+        }
+        
+        $log_file = WP_CONTENT_DIR . '/cigar-debug.log';
+        $timestamp = date('Y-m-d H:i:s');
+        $log_message = "$timestamp - $message\n";
+        file_put_contents($log_file, $log_message, FILE_APPEND);
+    }
+}
+
+class KT_Cigar_Mappings {
+	// Add this method to your KT_Cigar_Mappings class
+    public static function log_debug($message) {
+        // Use error_log for now, or integrate with your debug system
+        error_log("[KT_Cigar_Mappings] " . $message);
+        
+        // Or if you have a debug class, use that:
+        // if (class_exists('KT_Cigar_Debug')) {
+        //     KT_Cigar_Debug::log($message);
+        // }
+    }
+	
+	private static $instance = null;
+
+public static function get_instance() {
+    if (self::$instance === null) {
+        self::$instance = new self();
+        
+        // Initialize data file
+        self::$instance->init();
+    }
+    return self::$instance;
+}
+
+private function __construct() {
+    // Private constructor for singleton
+}
+
+	
+	
+    private static $logged_messages = [];
+    private static $initialized = false;
+    private static $data_file = null;
+    private static $embedding_cache = [];
+    
+    /**
+     * Initialize the class with data file
+     */
+    public static function init($force = false) {
+        if (self::$initialized && !$force) {
+            return;
+        }
+        
+        $data_file_path = WP_CONTENT_DIR . '/cigar-mappings-data.php';
+        
+        KT_Cigar_Debug::log("Attempting to load data file: " . $data_file_path);
+        
+        if (file_exists($data_file_path)) {
+            try {
+                self::$data_file = include $data_file_path;
+                
+                if (!is_array(self::$data_file)) {
+                    KT_Cigar_Debug::log("ERROR: Data file did not return an array");
+                    self::$data_file = self::getDefaultDataStructure();
+                } else {
+                    KT_Cigar_Debug::log("SUCCESS: Data file loaded with " . count(self::$data_file) . " top-level keys");
+                    
+                    if (isset(self::$data_file['brands'])) {
+                        $cuban_count = count(self::$data_file['brands']['cuban'] ?? []);
+                        $non_cuban_count = count(self::$data_file['brands']['non_cuban'] ?? []);
+                        KT_Cigar_Debug::log("Brands loaded: Cuban=$cuban_count, Non-Cuban=$non_cuban_count");
+                    } else {
+                        KT_Cigar_Debug::log("ERROR: No 'brands' section in data file");
+                    }
+                    
+                    if (isset(self::$data_file['series'])) {
+                        KT_Cigar_Debug::log("Series data loaded for " . count(self::$data_file['series']) . " brands");
+                    } else {
+                        KT_Cigar_Debug::log("ERROR: No 'series' section in data file");
+                    }
+                }
+            } catch (Exception $e) {
+                KT_Cigar_Debug::log("ERROR loading data file: " . $e->getMessage());
+                self::$data_file = self::getDefaultDataStructure();
+            }
+        } else {
+            KT_Cigar_Debug::log("ERROR: Data file not found: " . $data_file_path);
+            self::$data_file = self::getDefaultDataStructure();
+        }
+        
+        self::$initialized = true;
+        KT_Cigar_Debug::log("KT_Cigar_Mappings initialization complete");
+    }
+    
+    /**
+     * Get default data structure if data file is missing
+     */
+    private static function getDefaultDataStructure() {
+        return array(
+            'brands' => array(
+                'cuban' => array(),
+                'non_cuban' => array()
+            ),
+            'series' => array(),
+            'sizes' => array(),
+            'vitola_mappings' => array(),
+            'special_editions' => array(),
+            'zodiac_years' => array(),
+            'packaging' => array(),
+            'brand_aliases' => array(),
+            'product_types' => array(
+                'pipe_tobacco' => ['烟斗丝', '叶丝', 'pipe tobacco', 'tobacco', '100g', '50g', '250g'],
+                'accessory' => ['打火机', 'lighter', '烟灰缸', 'ashtray', '保湿盒', 'humidor']
+            ),
+            'exclude_keywords' => ['and', 'the', 'for', 'with', 'box', 'limited', 'edition', 'cigar', 'cigars'],
+            'filler_words' => ['的', '和', '与', '或', '但', '是', '有', '在', '了', '上', '个', '一', '二', '三'],
+            'count_patterns' => array(),
+            'year_patterns' => array()
+        );
+    }
+    
+    /**
+     * Detect product type using data file categories
+     */
+    private static function detectProductType($title) {
+        self::init();
+        
+        $title_lower = mb_strtolower($title);
+        
+      // ADD THIS DEBUG
+    KT_Cigar_Debug::log("BRAND DEBUG: Title = " . $title);
+    KT_Cigar_Debug::log("BRAND DEBUG: Data file loaded = " . (empty(self::$data_file) ? "NO" : "YES"));
+    KT_Cigar_Debug::log("BRAND DEBUG: Brands count = " . count(self::$data_file['brands']['cuban'] ?? []));  
+		
+		
+		
+		// Use product type indicators from data file if available
+        if (isset(self::$data_file['product_types'])) {
+            foreach (self::$data_file['product_types'] as $type => $indicators) {
+                foreach ($indicators as $indicator) {
+                    if (mb_strpos($title_lower, mb_strtolower($indicator)) !== false) {
+                        KT_Cigar_Debug::log("Product type detected from data file: " . $type . " (indicator: " . $indicator . ")");
+                        return $type;
+                    }
+                }
+            }
+        }
+        
+        return 'cigar'; // Default to cigar
+    }
+    
+    /**
+     * Process a supplier product title to extract relevant information
+     */
+   public static function process_supplier_product($title, $dimensions = "", $description = "") {
+    self::init();
+    
+    // DEBUG: Check if data file loaded
+    if (empty(self::$data_file)) {
+        KT_Cigar_Debug::log("CRITICAL: Data file not loaded in process_supplier_product");
+        return array('keywords' => array(), 'debug' => 'Data file not loaded');
+    }
+    
+    KT_Cigar_Debug::log("Processing: " . $title);
+    
+    $original_title = trim($title);
+    $normalized_title = mb_strtolower(trim($title));
+    
+    $result = array(
+        "title" => $original_title,
+        "normalized_title" => $normalized_title,
+        "brand" => null,
+        "model" => null,
+        "vitola" => null,
+        "special_edition" => null,
+        "year" => null,
+        "count" => null,
+        "dimension_info" => array(
+            "ring_gauge" => null,
+            "length" => null,
+            "format" => null
+        ),
+        "packaging" => null,
+        "keywords" => array(),
+        "filtered_title" => $normalized_title,
+        "product_type" => null
+    );
+    
+    KT_Cigar_Debug::log("Processing supplier title: " . $original_title);
+    
+    // Force everything to be treated as cigar
+    $result["product_type"] = 'cigar';
+    
+    // Step 2: Identify if this is a Chinese title
+    $has_chinese_chars = preg_match('/[\x{4e00}-\x{9fa5}]/u', $title);
+    KT_Cigar_Debug::log("Title contains Chinese characters: " . ($has_chinese_chars ? "Yes" : "No"));
+    
+    // Step 3: Extract brand FIRST (usually at beginning of title)
+    $result["brand"] = self::extractBrandFromDataFile($title);
+    
+    if (empty($result["brand"])) {
+        // If no brand found in data file, try to extract from beginning
+        $words = preg_split('/\s+/', $title);
+        if (!empty($words[0])) {
+            KT_Cigar_Debug::log("No brand in data file, using first word: " . $words[0]);
+            $result["brand"] = $words[0];
+        }
+    }
+    
+    // EMERGENCY: Force brand extraction if still empty
+    if (empty($result["brand"])) {
+        // Extract first meaningful word as brand
+        if (preg_match('/^([a-zA-Z\x{4e00}-\x{9fa5}]+)/u', $title, $matches)) {
+            $result["brand"] = $matches[1];
+            KT_Cigar_Debug::log("EMERGENCY: Using first word as brand: " . $matches[1]);
+        }
+    }
+    
+    // Step 4: Extract dimensions with improved logic
+    $dimension_result = self::extractDimensionsFromDataFile($title, $dimensions);
+    if ($dimension_result) {
+        $result["dimension_info"] = $dimension_result;
+    }
+    
+    // Step 5: Extract count using data file patterns
+    $result["count"] = self::extractCountFromDataFile($title);
+    
+    // Step 6: Extract year using data file year patterns
+    $result["year"] = self::extractYearFromDataFile($title);
+    
+    // Step 7: Extract series/model if brand was identified
+    if (!empty($result["brand"])) {
+        $result["model"] = self::extractSeriesFromDataFile($title, $result["brand"]);
+    }
+    
+    // Step 8: Extract special edition info using data file
+    $result["special_edition"] = self::extractSpecialEditionFromDataFile($title, $result["year"]);
+    
+    // Step 9: Enhanced vitola/size extraction using data file
+    $result["vitola"] = self::extractVitolaFromDataFile($title);
+    
+    // Step 10: Enhanced packaging extraction using data file
+    $result["packaging"] = self::extractPackagingFromDataFile($title);
+    
+    // Step 11: Generate improved keywords using data file (NO DUPLICATES)
+    $result["keywords"] = self::extractKeywordsFromDataFile($title, $result);
+    
+    // Step 12: Generate filtered title
+    $result["filtered_title"] = self::generateFilteredTitle($title, $result);
+    
+    KT_Cigar_Debug::log("Final processing result: Brand=" . ($result["brand"] ?? "None") . 
+                       ", Series=" . ($result["model"] ?? "None") . 
+                       ", Count=" . ($result["count"] ?? "None") .
+                       ", Type=" . $result["product_type"]);
+    
+    return $result;
+}
+
+    
+    /**
+     * Process internal database product to extract keywords and metadata
+     */
+    public static function process_internal_product($title, $brand = "", $series = "", $vitola = "", $dimensions = "") {
+        self::init();
+        
+        $original_title = trim($title);
+        $normalized_title = mb_strtolower(trim($title));
+        
+        $result = array(
+            "title" => $original_title,
+            "normalized_title" => $normalized_title,
+            "brand" => $brand,
+            "model" => $series,
+            "vitola" => $vitola,
+            "dimension_info" => array(),
+            "keywords" => array(),
+            "filtered_title" => $normalized_title,
+            "product_type" => null
+        );
+        
+        KT_Cigar_Debug::log("Processing internal product: " . $original_title);
+        
+        // Product type detection
+        $result["product_type"] = self::detectProductType($title);
+        
+        // Extract dimensions
+        if (!empty($dimensions)) {
+            $result["dimension_info"] = self::extract_dimensions($dimensions);
+        } else {
+            $dimension_result = self::extractDimensionsFromDataFile($title);
+            if ($dimension_result) {
+                $result["dimension_info"] = $dimension_result;
+            }
+        }
+        
+        // Aggressive vitola detection if not provided
+        if (empty($result["vitola"])) {
+            $result["vitola"] = self::extractVitolaFromDataFile($title);
+        }
+        
+        // Look for series/model indicators if not provided
+        if (empty($result["model"])) {
+            $result["model"] = self::extractSeriesFromDataFile($title, $result["brand"]);
+        }
+        
+        // Extract additional metadata
+        $result["count"] = self::extractCountFromDataFile($title);
+        $result["year"] = self::extractYearFromDataFile($title);
+        $result["packaging"] = self::extractPackagingFromDataFile($title);
+        $result["special_edition"] = self::extractSpecialEditionFromDataFile($title);
+        
+        // Generate keywords
+        $result["keywords"] = self::extractKeywordsFromDataFile($title, $result);
+        $result["filtered_title"] = self::generateFilteredTitle($title, $result);
+        
+        KT_Cigar_Debug::log("Internal product processing complete");
+        
+        return $result;
+    }
+    
+    /**
+     * Extract brand using data file (FIXED VERSION)
+     */
+  private static function extractBrandFromDataFile($title) {
+    self::init();
+    
+    $title_lower = mb_strtolower($title);
+	  
+	 KT_Cigar_Debug::log("=== BRAND EXTRACTION ===");
+    KT_Cigar_Debug::log("Title: " . $title);
+    KT_Cigar_Debug::log("Title lower: " . $title_lower);
+    
+    // First, try to extract from the beginning of the title
+    $first_word = '';
+    if (preg_match('/^([\x{4e00}-\x{9fa5}]+)/u', $title, $matches)) {
+        $first_word = $matches[1];
+        KT_Cigar_Debug::log("First Chinese word: " . $first_word);
+    } elseif (preg_match('/^([a-zA-Z\.]+)/i', $title, $matches)) {
+        $first_word = $matches[1];
+        KT_Cigar_Debug::log("First English word: " . $first_word);
+    } 
+	  
+	  
+	  
+    $brand_candidates = [];
+    
+    // Check each brand and its variations
+    foreach (['cuban', 'non_cuban'] as $section) {
+        if (isset(self::$data_file['brands'][$section])) {
+            foreach (self::$data_file['brands'][$section] as $main_brand => $variations) {
+                // Check if main brand name appears in title
+                $main_brand_lower = mb_strtolower($main_brand);
+                $position = mb_strpos($title_lower, $main_brand_lower);
+                if ($position !== false) {
+                    $brand_candidates[] = [
+                        'brand' => $main_brand,
+                        'match_length' => mb_strlen($main_brand_lower),
+                        'position' => $position,
+                        'match_text' => $main_brand
+                    ];
+                }
+                
+                // Check each variation
+                if (is_array($variations)) {
+                    foreach ($variations as $variation) {
+                        $variation_lower = mb_strtolower($variation);
+                        $position = mb_strpos($title_lower, $variation_lower);
+                        if ($position !== false) {
+                            $brand_candidates[] = [
+                                'brand' => $main_brand,  // Return the MAIN brand, not variation
+                                'match_length' => mb_strlen($variation_lower),
+                                'position' => $position,
+                                'match_text' => $variation
+                            ];
+                        }
+                    }
+                }
+            }
+        }
+    }
+    
+    // Sort by position (earliest first), then by length (longest first)
+    if (!empty($brand_candidates)) {
+        usort($brand_candidates, function($a, $b) {
+            if ($a['position'] !== $b['position']) {
+                return $a['position'] - $b['position'];
+            }
+            return $b['match_length'] - $a['match_length'];
+        });
+        
+        KT_Cigar_Debug::log("Brand extracted: " . $brand_candidates[0]['brand'] . 
+                           " (matched '" . $brand_candidates[0]['match_text'] . 
+                           "' at position " . $brand_candidates[0]['position'] . ")");
+        return $brand_candidates[0]['brand'];
+    }
+    
+    return null;
+}
+   /**
+ * Extract series using data file (replaces hardcoded series extraction)
+ */
+private static function extractSeriesFromDataFile($title, $brand) {
+    self::init();
+    
+    if (!$brand) return null;
+    
+    $title_lower = mb_strtolower($title);
+    
+    KT_Cigar_Debug::log("Extracting series for brand: $brand from title: $title");
+    
+    // Use series data from data file with proper reverse lookup
+    if (isset(self::$data_file['series'][$brand])) {
+        $series_candidates = [];
+        
+        foreach (self::$data_file['series'][$brand] as $main_series => $variations) {
+            // Check main series name
+            $position = mb_stripos($title_lower, mb_strtolower($main_series));
+            if ($position !== false) {
+                $series_candidates[] = [
+                    'series' => $main_series,
+                    'position' => $position,
+                    'length' => mb_strlen($main_series)
+                ];
+            }
+            
+            // Check variations
+            if (is_array($variations)) {
+                foreach ($variations as $variation) {
+                    $position = mb_stripos($title_lower, mb_strtolower($variation));
+                    if ($position !== false) {
+                        $series_candidates[] = [
+                            'series' => $main_series,  // Return MAIN series name
+                            'position' => $position,
+                            'length' => mb_strlen($variation)
+                        ];
+                    }
+                }
+            }
+        }
+        
+        // Return earliest and longest match
+        if (!empty($series_candidates)) {
+            usort($series_candidates, function($a, $b) {
+                // First priority: position (earlier is better)
+                if ($a['position'] !== $b['position']) {
+                    return $a['position'] - $b['position'];
+                }
+                // Second priority: length (longer is better)
+                return $b['length'] - $a['length'];
+            });
+            
+            KT_Cigar_Debug::log("Extracted series from data file: " . $series_candidates[0]['series']);
+            return $series_candidates[0]['series'];
+        }
+    }
+    
+    // Fallback patterns for common series formats
+    // Pattern for "Serie X" format
+    if (preg_match('/serie\s+([a-z0-9]+)/i', $title, $matches)) {
+        $series_name = "Serie " . strtoupper($matches[1]);
+        KT_Cigar_Debug::log("Extracted serie pattern: " . $series_name);
+        return $series_name;
+    }
+    
+    // Pattern for "Línea X" format
+    if (preg_match('/línea\s+([a-z0-9]+)/i', $title, $matches)) {
+        $series_name = "Línea " . ucfirst($matches[1]);
+        KT_Cigar_Debug::log("Extracted línea pattern: " . $series_name);
+        return $series_name;
+    }
+    
+    // Pattern for year-based series
+    if (preg_match('/(\d{4})\s+(series?|edition|edición)/i', $title, $matches)) {
+        $series_name = $matches[1] . " " . ucfirst($matches[2]);
+        KT_Cigar_Debug::log("Extracted year series: " . $series_name);
+        return $series_name;
+    }
+    
+    KT_Cigar_Debug::log("No series found for brand: $brand");
+    return null;
+}
+
+    // Helper method to normalize series names for comparison
+    private static function normalizeSeriesName($text) {
+        $normalized = mb_strtolower($text);
+        
+        // Remove common suffixes
+        $normalized = str_replace(['号', 'no.', 'number', '#'], '', $normalized);
+        
+        // Convert Chinese numbers to Arabic
+        $chinese_map = [
+            '一' => '1', '二' => '2', '三' => '3', '四' => '4', '五' => '5',
+            '六' => '6', '七' => '7', '八' => '8', '九' => '9', '十' => '10'
+        ];
+        
+        foreach ($chinese_map as $chinese => $arabic) {
+            $normalized = str_replace($chinese, $arabic, $normalized);
+        }
+        
+        // Convert Roman numerals to Arabic (do longer ones first)
+        $roman_map = [
+            'x' => '10', 'ix' => '9', 'viii' => '8', 'vii' => '7', 'vi' => '6',
+            'v' => '5', 'iv' => '4', 'iii' => '3', 'ii' => '2', 'i' => '1'
+        ];
+        
+        foreach ($roman_map as $roman => $arabic) {
+            $normalized = preg_replace('/\b' . $roman . '\b/', $arabic, $normalized);
+        }
+        
+        // Normalize spaces
+        $normalized = preg_replace('/\s+/', ' ', $normalized);
+        $normalized = trim($normalized);
+        
+        return $normalized;
+    }
+
+    // Helper to convert Chinese numbers to Arabic
+    private static function chineseToArabic($chinese) {
+        $map = [
+            '一' => 1, '二' => 2, '三' => 3, '四' => 4, '五' => 5,
+            '六' => 6, '七' => 7, '八' => 8, '九' => 9, '十' => 10,
+            '十一' => 11, '十二' => 12, '十三' => 13, '十四' => 14, '十五' => 15
+        ];
+        return $map[$chinese] ?? $chinese;
+    }
+
+    // Helper to convert Arabic to Roman
+    private static function arabicToRoman($num) {
+        $num = intval($num);
+        $map = [
+            1 => 'I', 2 => 'II', 3 => 'III', 4 => 'IV', 5 => 'V',
+            6 => 'VI', 7 => 'VII', 8 => 'VIII', 9 => 'IX', 10 => 'X',
+            11 => 'XI', 12 => 'XII', 13 => 'XIII', 14 => 'XIV', 15 => 'XV'
+        ];
+        return $map[$num] ?? $num;
+    }
+    
+    /**
+     * Extract vitola using data file (replaces hardcoded vitola patterns)
+     */
+    private static function extractVitolaFromDataFile($title) {
+        self::init();
+        
+        $title_lower = mb_strtolower($title);
+        
+        // Use vitola mappings from data file
+        if (isset(self::$data_file['vitola_mappings'])) {
+            foreach (self::$data_file['vitola_mappings'] as $english_vitola => $patterns) {
+                foreach ($patterns as $pattern) {
+                    if (mb_stripos($title_lower, mb_strtolower($pattern)) !== false) {
+                        KT_Cigar_Debug::log("Extracted vitola from data file: " . $english_vitola . " from pattern: " . $pattern);
+                        return $english_vitola;
+                    }
+                }
+            }
+        }
+        
+        return null;
+    }
+    
+    /**
+     * Extract dimensions using data file size mappings (replaces hardcoded dimension extraction)
+     */
+    private static function extractDimensionsFromDataFile($title, $dimensions_param = "") {
+        self::init();
+        
+        // Use parameter first if provided
+        if (!empty($dimensions_param)) {
+            return self::extract_dimensions($dimensions_param);
+        }
+        
+        // Use size mappings from data file if available
+        if (isset(self::$data_file['sizes'])) {
+            $title_lower = mb_strtolower($title);
+            
+            foreach (self::$data_file['sizes'] as $size_name => $size_info) {
+                if (isset($size_info['patterns'])) {
+                    foreach ($size_info['patterns'] as $pattern) {
+                        if (mb_strpos($title_lower, mb_strtolower($pattern)) !== false) {
+                            KT_Cigar_Debug::log("Found size from data file: " . $size_name);
+                            if (isset($size_info['ring_gauge']) && isset($size_info['length'])) {
+                                return [
+                                    'ring_gauge' => $size_info['ring_gauge'],
+                                    'length' => $size_info['length'],
+                                    'format' => $size_info['ring_gauge'] . '/' . $size_info['length']
+                                ];
+                            }
+                        }
+                    }
+                }
+            }
+        }
+        
+        // Fallback to pattern matching if not found in data file
+        $patterns = [
+            '/(?:【)?(\d+)\s*[×x*]\s*(\d+)(?:】)?/',  // 178*48, 【178×48】
+            '/(\d+)\s*\/\s*(\d+)/',                   // 52/140
+            '/RING:\s*(\d+).*?LENGTH:\s*(\d+)/i',     // RING: 52 LENGTH: 140
+        ];
+        
+        foreach ($patterns as $pattern) {
+            if (preg_match($pattern, $title, $matches)) {
+                $first = intval($matches[1]);
+                $second = intval($matches[2]);
+                
+                // Determine ring gauge vs length based on typical ranges
+                if ($first >= 20 && $first <= 70 && $second > 70) {
+                    return ['ring_gauge' => $first, 'length' => $second, 'format' => $first . '/' . $second];
+                } else if ($second >= 20 && $second <= 70 && $first > 70) {
+                    return ['ring_gauge' => $second, 'length' => $first, 'format' => $second . '/' . $first];
+                } else {
+                    return ['ring_gauge' => $second, 'length' => $first, 'format' => $second . '/' . $first];
+                }
+            }
+        }
+        
+        return null;
+    }
+    
+    /**
+     * Extract count using data file count patterns
+     */
+    private static function extractCountFromDataFile($title) {
+        self::init();
+        
+        // Use count patterns from data file if available
+        if (isset(self::$data_file['count_patterns'])) {
+            foreach (self::$data_file['count_patterns'] as $pattern_info) {
+                if (isset($pattern_info['regex'])) {
+                    if (preg_match($pattern_info['regex'], $title, $matches)) {
+                        $count = isset($pattern_info['multiplier']) && isset($matches[2]) 
+                            ? intval($matches[1]) * intval($matches[2])
+                            : intval($matches[1]);
+                        KT_Cigar_Debug::log("Extracted count from data file pattern: " . $count);
+                        return $count;
+                    }
+                }
+            }
+        }
+        
+        // Fallback patterns
+        $patterns = [
+            '/(\d+)\s*(?:支|pcs|个|count|ct)(?:\/盒)?/ui',
+            '/(?:box\s+of\s+|装)(\d+)/i',
+            '/\((\d+)×(\d+)\)/',
+            '/(\d+)\s*-\s*count/i'
+        ];
+        
+        foreach ($patterns as $pattern) {
+            if (preg_match($pattern, $title, $matches)) {
+                if (isset($matches[2])) {
+                    return intval($matches[1]) * intval($matches[2]);
+                } else {
+                    return intval($matches[1]);
+                }
+            }
+        }
+        
+        return null;
+    }
+    
+    /**
+     * Extract year using data file year patterns
+     */
+    private static function extractYearFromDataFile($title) {
+        self::init();
+        
+        // Use year patterns from data file if available
+        if (isset(self::$data_file['year_patterns'])) {
+            foreach (self::$data_file['year_patterns'] as $pattern) {
+                if (preg_match($pattern, $title, $matches)) {
+                    $year = intval($matches[1]);
+                    $current_year = intval(date('Y'));
+                    
+                    if ($year >= 1950 && $year <= $current_year + 2) {
+                        KT_Cigar_Debug::log("Extracted year from data file pattern: " . $year);
+                        return $year;
+                    }
+                }
+            }
+        }
+        
+        // Fallback pattern
+        if (preg_match('/(\d{4})(?:年|限量版?|LE|Limited Edition)?/iu', $title, $matches)) {
+            $year = intval($matches[1]);
+            $current_year = intval(date('Y'));
+            
+            if ($year >= 1950 && $year <= $current_year + 2) {
+                return $year;
+            }
+        }
+        
+        return null;
+    }
+/**
+    * Extract special edition using data file
+    */
+   private static function extractSpecialEditionFromDataFile($title, $year = null) {
+       self::init();
+       
+       $title_lower = mb_strtolower($title);
+       
+       // Check zodiac years from data file
+       if (isset(self::$data_file['zodiac_years'])) {
+           foreach (self::$data_file['zodiac_years'] as $english_animal => $variations) {
+               foreach ($variations as $variation) {
+                   if (mb_strpos($title_lower, mb_strtolower($variation)) !== false) {
+                       $special_edition = $english_animal;
+                       if ($year) {
+                           $special_edition = $year . " " . $special_edition;
+                       }
+                       KT_Cigar_Debug::log("Zodiac year found from data file: " . $special_edition);
+                       return $special_edition;
+                   }
+               }
+           }
+       }
+       
+       // Check limited editions from data file
+       if (isset(self::$data_file['special_editions'])) {
+           foreach (self::$data_file['special_editions'] as $edition_type => $variations) {
+               foreach ($variations as $variation) {
+                   if (mb_strpos($title_lower, mb_strtolower($variation)) !== false) {
+                       $special_edition = $edition_type;
+                       if ($year) {
+                           $special_edition = $year . " " . $special_edition;
+                       }
+                       KT_Cigar_Debug::log("Special edition found from data file: " . $special_edition);
+                       return $special_edition;
+                   }
+               }
+           }
+       }
+       
+       return null;
+   }
+   
+   /**
+    * Extract packaging using data file
+    */
+   private static function extractPackagingFromDataFile($title) {
+       self::init();
+       
+       $title_lower = mb_strtolower($title);
+       
+       // Use packaging mappings from data file
+       if (isset(self::$data_file['packaging'])) {
+           foreach (self::$data_file['packaging'] as $package_type => $patterns) {
+               foreach ($patterns as $pattern) {
+                   if (mb_strpos($title_lower, mb_strtolower($pattern)) !== false) {
+                       KT_Cigar_Debug::log("Packaging found from data file: " . $package_type . " from pattern: " . $pattern);
+                       return $package_type;
+                   }
+               }
+           }
+       }
+       
+       return null;
+   }
+   
+   /**
+ * Extract keywords using data file categories - FIXED VERSION
+ */
+private static function extractKeywordsFromDataFile($title, $extracted_data) {
+    self::init();
+    
+  KT_Cigar_Debug::log("=== KEYWORD EXTRACTION DEBUG ===");
+    KT_Cigar_Debug::log("Title: " . $title);
+    KT_Cigar_Debug::log("Extracted brand: " . ($extracted_data['brand'] ?? 'NONE'));
+    
+    $keywords = [];
+    
+    // Add structured keywords with prefixes
+    if (!empty($extracted_data['brand'])) {
+        $keywords[] = "BRAND:" . $extracted_data['brand'];
+    }
+    
+    if (!empty($extracted_data['model'])) {
+        $keywords[] = "SERIES:" . $extracted_data['model'];
+    }
+    
+    if (!empty($extracted_data['vitola'])) {
+        $keywords[] = "VITOLA:" . $extracted_data['vitola'];
+    }
+    
+    if (!empty($extracted_data['dimension_info']['format'])) {
+        $keywords[] = "DIM:" . $extracted_data['dimension_info']['format'];
+    }
+    
+    if (!empty($extracted_data['count'])) {
+        $keywords[] = "COUNT:" . $extracted_data['count'];
+    }
+    
+    if (!empty($extracted_data['year'])) {
+        $keywords[] = "YEAR:" . $extracted_data['year'];
+    }
+    
+   // Extract Chinese words (2+ characters) - ONLY if they're meaningful
+    if (preg_match_all('/[\x{4e00}-\x{9fa5}]{2,}/u', $title, $matches)) {
+        foreach ($matches[0] as $word) {
+            if (mb_strlen($word) >= 2 && mb_strlen($word) <= 4) {
+                // Only add if it's not a brand from different manufacturer
+                if (!self::isWordFromDifferentBrand($word, $extracted_data['brand'])) {
+                    $keywords[] = $word;
+                }
+            }
+        }
+    }
+    
+    // Extract numbers
+    if (preg_match_all('/\d+/', $title, $matches)) {
+        foreach ($matches[0] as $num) {
+            if (intval($num) > 0) {  // Skip zero
+                $keywords[] = "NUM:" . $num;
+            }
+        }
+    }
+    
+    // Extract English words (3+ characters) - BRAND-FILTERED
+    if (preg_match_all('/[a-zA-Z]{3,}/', $title, $matches)) {
+        foreach ($matches[0] as $word) {
+            $word_lower = strtolower($word);
+            // Skip common words AND words from other brands
+            if (!in_array($word_lower, ['the', 'and', 'for', 'with', 'box']) && 
+                !self::isWordFromDifferentBrand($word_lower, $extracted_data['brand'])) {
+                $keywords[] = $word_lower;
+            }
+        }
+    }
+    // EMERGENCY FALLBACK - ensure we always have keywords
+    if (empty($keywords)) {
+        KT_Cigar_Debug::log("WARNING: No keywords extracted!");
+        // Force at least one keyword
+        $keywords[] = mb_substr($title, 0, 10); // First 10 chars
+    }
+    
+    KT_Cigar_Debug::log("Final keywords count: " . count($keywords));
+    KT_Cigar_Debug::log("Keywords: " . json_encode($keywords));
+    
+    return $keywords;
+}
+ 
+/**
+ * Check if a word belongs to a different brand than the extracted one
+ */
+private static function isWordFromDifferentBrand($word, $extracted_brand) {
+    self::init();
+    
+    if (empty($extracted_brand)) {
+        return false; // No brand extracted, allow all words
+    }
+    
+    $word_lower = mb_strtolower($word);
+    
+    // Check if this word is part of ANY brand that's different from extracted_brand
+    foreach (['cuban', 'non_cuban'] as $section) {
+        if (isset(self::$data_file['brands'][$section])) {
+            foreach (self::$data_file['brands'][$section] as $main_brand => $variations) {
+                if (mb_strtolower($main_brand) !== mb_strtolower($extracted_brand)) {
+                    // Check if word matches this different brand
+                    if (mb_strpos(mb_strtolower($main_brand), $word_lower) !== false) {
+                        return true; // Word belongs to different brand
+                    }
+                    
+                    foreach ($variations as $variation) {
+                        if (mb_strpos(mb_strtolower($variation), $word_lower) !== false) {
+                            return true; // Word belongs to different brand
+                        }
+                    }
+                }
+            }
+        }
+    }
+    
+    return false; // Word doesn't belong to any other brand
+}	
+	
+	
+	
+	
+	
+	
+	
+	
+	
+	/**
+    * Check if a term is meaningful based on data file categories
+    */
+   private static function isMeaningfulTerm($term) {
+       self::init();
+       
+       $term_lower = mb_strtolower($term);
+       
+       // Check if it's part of any known category in data file
+       // Check vitolas
+       if (isset(self::$data_file['vitola_mappings'])) {
+           foreach (self::$data_file['vitola_mappings'] as $vitola => $patterns) {
+               foreach ($patterns as $pattern) {
+                   if (mb_strpos(mb_strtolower($pattern), $term_lower) !== false) {
+                       return true;
+                   }
+               }
+           }
+       }
+       
+       // Check packaging
+       if (isset(self::$data_file['packaging'])) {
+           foreach (self::$data_file['packaging'] as $package => $patterns) {
+               foreach ($patterns as $pattern) {
+                   if (mb_strpos(mb_strtolower($pattern), $term_lower) !== false) {
+                       return true;
+                   }
+               }
+           }
+       }
+       
+       // Check special editions
+       if (isset(self::$data_file['special_editions'])) {
+           foreach (self::$data_file['special_editions'] as $edition => $patterns) {
+               foreach ($patterns as $pattern) {
+                   if (mb_strpos(mb_strtolower($pattern), $term_lower) !== false) {
+                       return true;
+                   }
+               }
+           }
+       }
+       
+       // Check zodiac years
+       if (isset(self::$data_file['zodiac_years'])) {
+           foreach (self::$data_file['zodiac_years'] as $animal => $patterns) {
+               foreach ($patterns as $pattern) {
+                   if (mb_strpos(mb_strtolower($pattern), $term_lower) !== false) {
+                       return true;
+                   }
+               }
+           }
+       }
+       
+       // If not found in any category, check length
+       // Chinese terms with 2-4 characters are usually meaningful
+       if (preg_match('/^[\x{4e00}-\x{9fa5}]{2,4}$/u', $term)) {
+           return true;
+       }
+       
+       return false;
+   }
+   
+   /**
+    * Check if a word is a filler word using data file
+    */
+   private static function isFillerWord($word) {
+       self::init();
+       
+       if (isset(self::$data_file['filler_words'])) {
+           return in_array(mb_strtolower($word), array_map('mb_strtolower', self::$data_file['filler_words']));
+       }
+       
+       return false;
+   }
+   
+   /**
+    * Generate filtered title for comparison
+    */
+   private static function generateFilteredTitle($title, $extracted_data) {
+       $filtered = mb_strtolower($title);
+       
+       // Remove identified structured elements
+       if ($extracted_data['brand']) {
+           $filtered = str_replace(mb_strtolower($extracted_data['brand']), '', $filtered);
+       }
+       if ($extracted_data['model']) {
+           $filtered = str_replace(mb_strtolower($extracted_data['model']), '', $filtered);
+       }
+       if ($extracted_data['vitola']) {
+           $filtered = str_replace(mb_strtolower($extracted_data['vitola']), '', $filtered);
+       }
+       
+       // Clean up
+       $filtered = preg_replace('/\s+/', ' ', $filtered);
+       return trim($filtered);
+   }
+   
+   /**
+    * HYBRID MATCHING - Main entry point
+    */
+  public static function match_products($supplier_data, $internal_products, $threshold = 0.3) {
+    self::init();
+    
+    // Add this debug right at the start
+    KT_Cigar_Debug::log("🔥 MATCH_PRODUCTS ENTERED with " . count($internal_products) . " products");
+    
+    // Process supplier data if it's just a title string
+    if (is_string($supplier_data)) {
+        $supplier_data = self::process_supplier_product($supplier_data);
+    }
+    
+    // CRITICAL: Add more debug
+    KT_Cigar_Debug::log("Supplier data brand: " . ($supplier_data['brand'] ?? 'NONE'));
+    KT_Cigar_Debug::log("Supplier data type: " . ($supplier_data['product_type'] ?? 'NONE'));
+    
+    // Force all products to be treated as cigars for now
+$supplier_data['product_type'] = 'cigar';
+
+    
+    $matches = [];
+    
+    foreach ($internal_products as $internal_product) {
+        // Add debug for each product being processed
+        KT_Cigar_Debug::log("Processing internal product: " . ($internal_product['title'] ?? 'NO_TITLE'));
+        
+        // POTENTIAL ISSUE: process_internal_product might be failing
+        $internal_data = self::process_internal_product(
+            $internal_product['title'] ?? '',
+            $internal_product['brand'] ?? '',
+            $internal_product['series'] ?? '',
+            $internal_product['vitola'] ?? '',
+            $internal_product['dimensions'] ?? ''
+        );
+        
+        KT_Cigar_Debug::log("Internal data type: " . ($internal_data['product_type'] ?? 'NONE'));
+        
+        if (isset($internal_data['product_type']) && $internal_data['product_type'] !== 'cigar') {
+            KT_Cigar_Debug::log("❌ Internal product filtered out - type: " . $internal_data['product_type']);
+            continue;
+        }
+        
+        // Calculate scores - ADD MORE DEBUG HERE
+        $exact_score = self::calculateExactMatch($supplier_data, $internal_data);
+        KT_Cigar_Debug::log("Exact score: " . $exact_score);
+        
+       // Don't skip on zero exact score - allow fuzzy matching
+if ($exact_score == 0) {
+    $exact_score = 0.1; // Give minimal score to allow other matching
+}
+
+        
+        // Continue with other calculations...
+        $fuzzy_score = self::calculateFuzzyMatch($supplier_data, $internal_data);
+        $keyword_score = self::calculateImprovedKeywordMatch($supplier_data, $internal_data);
+        $title_score = self::calculateTitleSimilarity($supplier_data['title'], $internal_data['title']);
+        $semantic_score = self::calculateSemanticSimilarity($supplier_data['title'], $internal_data['title']);
+        $compatibility_score = self::checkBidirectionalCompatibility($supplier_data, $internal_data);
+        
+        $final_score = self::calculateHybridScore([
+            'exact' => $exact_score,
+            'fuzzy' => $fuzzy_score,
+            'keyword' => $keyword_score,
+            'title' => $title_score,
+            'semantic' => $semantic_score,
+            'compatibility' => $compatibility_score
+        ]);
+        
+        KT_Cigar_Debug::log("Final score: " . $final_score . " (threshold: " . ($threshold * 100) . ")");
+        
+        if ($final_score >= 30) { // Lower threshold from 30 to allow more matches
+
+            $matches[] = [
+                'internal_product' => $internal_product,
+                'internal_data' => $internal_data,
+                'score' => $final_score,
+                'match_details' => [
+                    'exact_score' => $exact_score,
+                    'fuzzy_score' => $fuzzy_score,
+                    'keyword_score' => $keyword_score,
+                    'title_score' => $title_score,
+                    'semantic_score' => $semantic_score,
+                    'compatibility_score' => $compatibility_score,
+                    'method' => 'hybrid'
+                ]
+            ];
+            KT_Cigar_Debug::log("✅ Match found with score: " . $final_score);
+        } else {
+            KT_Cigar_Debug::log("❌ Score too low: " . $final_score);
+        }
+    }
+    
+    KT_Cigar_Debug::log("🎯 Total matches found: " . count($matches));
+    
+    // Sort by score descending
+    usort($matches, function($a, $b) {
+        return $b['score'] <=> $a['score'];
+    });
+    
+    return $matches;
+}
+
+   /**
+    * Calculate exact match score
+    */
+ private static function calculateExactMatch($supplier, $internal) {
+    KT_Cigar_Debug::log("🔍 === EXACT MATCH CALCULATION START ===");
+    KT_Cigar_Debug::log("Supplier brand: '" . ($supplier['brand'] ?? 'NONE') . "'");
+    KT_Cigar_Debug::log("Internal brand: '" . ($internal['brand'] ?? 'NONE') . "'");
+    KT_Cigar_Debug::log("Supplier model: '" . ($supplier['model'] ?? 'NONE') . "'");
+    KT_Cigar_Debug::log("Internal model: '" . ($internal['model'] ?? 'NONE') . "'");
+    KT_Cigar_Debug::log("Supplier count: '" . ($supplier['count'] ?? 'NONE') . "'");
+    KT_Cigar_Debug::log("Internal count: '" . ($internal['count'] ?? 'NONE') . "'");
+    
+    // Brand validation - BOTH must have brands
+    if (empty($supplier['brand']) || empty($internal['brand'])) {
+        KT_Cigar_Debug::log("❌ Missing brand data - returning 0.0");
+        KT_Cigar_Debug::log("=== EXACT MATCH END ===");
+        return 0.0;
+    }
+    
+    // Brand comparison - MANDATORY
+    $same_brand = self::isSameBrandUsingDataFile($supplier['brand'], $internal['brand']);
+    KT_Cigar_Debug::log("Brand comparison result: " . ($same_brand ? 'SAME' : 'DIFFERENT'));
+    
+    if (!$same_brand) {
+        KT_Cigar_Debug::log("❌ Different brands - returning 0.0");
+        KT_Cigar_Debug::log("=== EXACT MATCH END ===");
+        return 0.0;
+    }
+    
+    // Start scoring for same-brand products
+    $score = 0.0;
+    $components = 0;
+    
+    // 1. Brand Match (guaranteed at this point)
+    $components++;
+    $score += 1.0;
+    KT_Cigar_Debug::log("✅ Brand match: +1.0 (components: $components, score: $score)");
+    
+    // 2. Series/Model matching
+    if (!empty($supplier['model']) && !empty($internal['model'])) {
+        $components++;
+        $series_similarity = self::calculateSeriesSimilarityUsingDataFile(
+            $supplier['model'], 
+            $internal['model'], 
+            $supplier['brand']
+        );
+        $score += $series_similarity;
+        KT_Cigar_Debug::log("✅ Series comparison: '{$supplier['model']}' vs '{$internal['model']}' = $series_similarity");
+        KT_Cigar_Debug::log("   Series match: +$series_similarity (components: $components, score: $score)");
+    } else {
+        KT_Cigar_Debug::log("⚠️  Missing series data - supplier: '" . ($supplier['model'] ?? 'NONE') . "', internal: '" . ($internal['model'] ?? 'NONE') . "'");
+    }
+    
+    // 3. Dimension matching
+    $supplier_ring = $supplier['dimension_info']['ring_gauge'] ?? null;
+    $supplier_length = $supplier['dimension_info']['length'] ?? null;
+    $internal_ring = $internal['dimension_info']['ring_gauge'] ?? null;
+    $internal_length = $internal['dimension_info']['length'] ?? null;
+    
+    KT_Cigar_Debug::log("Dimensions - Supplier: {$supplier_ring}/{$supplier_length}, Internal: {$internal_ring}/{$internal_length}");
+    
+    if (!empty($supplier_ring) && !empty($internal_ring)) {
+        $components++;
+        $dim_similarity = self::calculateDimensionSimilarity(
+            $supplier['dimension_info'], 
+            $internal['dimension_info']
+        );
+        $score += $dim_similarity;
+        KT_Cigar_Debug::log("✅ Dimension match: +$dim_similarity (components: $components, score: $score)");
+    } else {
+        KT_Cigar_Debug::log("⚠️  Missing dimension data");
+    }
+    
+    // 4. Count matching
+    if (!empty($supplier['count']) && !empty($internal['count'])) {
+        $components++;
+        $count_score = 0;
+        
+        if ($supplier['count'] == $internal['count']) {
+            $count_score = 1.0;
+            KT_Cigar_Debug::log("✅ Perfect count match: {$supplier['count']} = {$internal['count']}");
+        } else {
+            $count_diff = abs($supplier['count'] - $internal['count']);
+            if ($count_diff <= 5) {
+                $count_score = 0.5;
+                KT_Cigar_Debug::log("✅ Close count match: {$supplier['count']} ≈ {$internal['count']} (diff: $count_diff)");
+            } else {
+                $count_score = 0.0;
+                KT_Cigar_Debug::log("❌ Count mismatch: {$supplier['count']} vs {$internal['count']} (diff: $count_diff)");
+            }
+        }
+        
+        $score += $count_score;
+        KT_Cigar_Debug::log("   Count score: +$count_score (components: $components, score: $score)");
+    } else {
+        KT_Cigar_Debug::log("⚠️  Missing count data - supplier: '" . ($supplier['count'] ?? 'NONE') . "', internal: '" . ($internal['count'] ?? 'NONE') . "'");
+    }
+    
+    // 5. Vitola matching (if available)
+    if (!empty($supplier['vitola']) && !empty($internal['vitola'])) {
+        $components++;
+        $vitola_score = 0;
+        
+        if (mb_strtolower($supplier['vitola']) === mb_strtolower($internal['vitola'])) {
+            $vitola_score = 1.0;
+            KT_Cigar_Debug::log("✅ Perfect vitola match: '{$supplier['vitola']}' = '{$internal['vitola']}'");
+        } else if (mb_stripos($supplier['vitola'], $internal['vitola']) !== false || 
+                  mb_stripos($internal['vitola'], $supplier['vitola']) !== false) {
+            $vitola_score = 0.7;
+            KT_Cigar_Debug::log("✅ Partial vitola match: '{$supplier['vitola']}' ≈ '{$internal['vitola']}'");
+        } else {
+            $vitola_score = 0.0;
+            KT_Cigar_Debug::log("❌ Vitola mismatch: '{$supplier['vitola']}' vs '{$internal['vitola']}'");
+        }
+        
+        $score += $vitola_score;
+        KT_Cigar_Debug::log("   Vitola score: +$vitola_score (components: $components, score: $score)");
+    } else {
+        KT_Cigar_Debug::log("⚠️  Missing vitola data - supplier: '" . ($supplier['vitola'] ?? 'NONE') . "', internal: '" . ($internal['vitola'] ?? 'NONE') . "'");
+    }
+    
+    // 6. Year matching (if available)
+    if (!empty($supplier['year']) && !empty($internal['year'])) {
+        $components++;
+        $year_score = 0;
+        
+        if ($supplier['year'] == $internal['year']) {
+            $year_score = 1.0;
+            KT_Cigar_Debug::log("✅ Perfect year match: {$supplier['year']} = {$internal['year']}");
+        } else {
+            $year_diff = abs($supplier['year'] - $internal['year']);
+            if ($year_diff <= 1) {
+                $year_score = 0.8;
+                KT_Cigar_Debug::log("✅ Close year match: {$supplier['year']} ≈ {$internal['year']} (diff: $year_diff)");
+            } else if ($year_diff <= 3) {
+                $year_score = 0.5;
+                KT_Cigar_Debug::log("⚠️  Moderate year diff: {$supplier['year']} vs {$internal['year']} (diff: $year_diff)");
+            } else {
+                $year_score = 0.0;
+                KT_Cigar_Debug::log("❌ Year mismatch: {$supplier['year']} vs {$internal['year']} (diff: $year_diff)");
+            }
+        }
+        
+        $score += $year_score;
+        KT_Cigar_Debug::log("   Year score: +$year_score (components: $components, score: $score)");
+    } else {
+        KT_Cigar_Debug::log("⚠️  Missing year data - supplier: '" . ($supplier['year'] ?? 'NONE') . "', internal: '" . ($internal['year'] ?? 'NONE') . "'");
+    }
+    
+    // Calculate final score
+    $final_score = $components > 0 ? $score / $components : 0.0;
+    
+    KT_Cigar_Debug::log("📊 EXACT MATCH SUMMARY:");
+    KT_Cigar_Debug::log("   Total score: $score");
+    KT_Cigar_Debug::log("   Components: $components");
+    KT_Cigar_Debug::log("   Final score: $final_score");
+    KT_Cigar_Debug::log("🎯 === EXACT MATCH END ===");
+    
+    return $final_score;
+}
+
+   /**
+    * Calculate fuzzy match score
+    */
+  private static function calculateFuzzyMatch($supplier, $internal) {
+    $score = 0;
+    $components = 0;
+    
+    // Brand fuzzy matching (only if same brand)
+    if ($supplier['brand'] && $internal['brand']) {
+        if (self::isSameBrandUsingDataFile($supplier['brand'], $internal['brand'])) {
+            $components++;
+            $score += 1.0;
+        } else {
+            return 0; // Different brands = no fuzzy match
+        }
+    }
+    
+    // Model fuzzy matching
+    if ($supplier['model'] && $internal['model']) {
+        $components++;
+        $similarity = self::calculateSeriesSimilarityUsingDataFile(
+            $supplier['model'], 
+            $internal['model'], 
+            $supplier['brand']
+        );
+        $score += $similarity;
+    }
+    
+    // Dimension fuzzy matching
+    if (!empty($supplier['dimension_info']['ring_gauge']) && 
+        !empty($internal['dimension_info']['ring_gauge'])) {
+        $components++;
+        $dim_score = self::calculateDimensionSimilarity(
+            $supplier['dimension_info'], 
+            $internal['dimension_info']
+        );
+        $score += $dim_score;
+    }
+    
+    // Vitola fuzzy matching
+    if ($supplier['vitola'] && $internal['vitola']) {
+        $components++;
+        if (mb_strtolower($supplier['vitola']) === mb_strtolower($internal['vitola'])) {
+            $score += 1.0;
+        } else if (mb_stripos($supplier['vitola'], $internal['vitola']) !== false || 
+                  mb_stripos($internal['vitola'], $supplier['vitola']) !== false) {
+            $score += 0.7;
+        } else {
+            $score += 0.0;
+        }
+    }
+    
+    KT_Cigar_Debug::log("Fuzzy match: " . $components . " components, total score: " . $score);
+    
+    return $components > 0 ? $score / $components : 0.0;
+}
+ private static function isSameBrandUsingDataFile($brand1, $brand2) {
+    self::init();
+    
+    // Direct match
+    if (mb_strtolower($brand1) === mb_strtolower($brand2)) {
+        return true;
+    }
+    
+    // Find which main brands these belong to
+    $main_brand1 = self::getMainBrandFromDataFile($brand1);
+    $main_brand2 = self::getMainBrandFromDataFile($brand2);
+    
+    // Compare main brands
+    return $main_brand1 && $main_brand2 && 
+           mb_strtolower($main_brand1) === mb_strtolower($main_brand2);
+}
+ /**
+ * Public method to check if two brands are the same
+ */
+public static function is_same_brand($brand1, $brand2) {
+    return self::isSameBrandUsingDataFile($brand1, $brand2);
+}
+
+/**
+ * Get main brand from data file
+ */
+private static function getMainBrandFromDataFile($brand) {
+    self::init();
+    
+    $brand_lower = mb_strtolower($brand);
+    
+    // Check all brands
+    foreach (['cuban', 'non_cuban'] as $section) {
+        if (isset(self::$data_file['brands'][$section])) {
+            foreach (self::$data_file['brands'][$section] as $main_brand => $variations) {
+                // Check if it IS the main brand
+                if (mb_strtolower($main_brand) === $brand_lower) {
+                    return $main_brand;
+                }
+                
+                // Check if it's a variation
+                if (is_array($variations)) {
+                    foreach ($variations as $variation) {
+                        if (mb_strtolower($variation) === $brand_lower) {
+                            return $main_brand;
+                        }
+                    }
+                }
+            }
+        }
+    }
+    
+    // Not found in data file, return as-is
+    return $brand;
+}
+
+   /**
+    * Get main brand - PUBLIC method required by main plugin
+    */
+   public static function get_main_brand($brand) {
+       return self::getMainBrandFromDataFile($brand);
+   }
+   
+   /**
+    * Calculate series similarity using data file
+    */
+   private static function calculateSeriesSimilarityUsingDataFile($series1, $series2, $brand) {
+       self::init();
+       
+       if (mb_strtolower($series1) === mb_strtolower($series2)) {
+           return 1.0;
+       }
+       
+       if ($brand && isset(self::$data_file['series'][$brand])) {
+           $main_series1 = null;
+           $main_series2 = null;
+           
+           foreach (self::$data_file['series'][$brand] as $main_series => $variations) {
+               $all_series_names = array_merge([$main_series], $variations);
+               
+               if (in_array($series1, $all_series_names) || 
+                   in_array(mb_strtolower($series1), array_map('mb_strtolower', $all_series_names))) {
+                   $main_series1 = $main_series;
+               }
+               
+               if (in_array($series2, $all_series_names) || 
+                   in_array(mb_strtolower($series2), array_map('mb_strtolower', $all_series_names))) {
+                   $main_series2 = $main_series;
+               }
+           }
+           
+           if ($main_series1 && $main_series2 && $main_series1 === $main_series2) {
+               return 1.0;
+           }
+       }
+       
+       return self::calculateStringSimilarity($series1, $series2);
+   }
+   
+   /**
+    * Calculate dimension similarity
+    */
+   private static function calculateDimensionSimilarity($dim1, $dim2) {
+       if (!$dim1 || !$dim2 || !isset($dim1['ring_gauge']) || !isset($dim2['ring_gauge']) ||
+           !isset($dim1['length']) || !isset($dim2['length'])) {
+           return 0;
+       }
+       
+       $ring_diff = abs($dim1['ring_gauge'] - $dim2['ring_gauge']);
+       $length_diff = abs($dim1['length'] - $dim2['length']);
+       
+       if ($ring_diff == 0 && $length_diff == 0) return 1.0;
+       if ($ring_diff <= 2 && $length_diff <= 5) return 0.9;
+       if ($ring_diff <= 4 && $length_diff <= 10) return 0.7;
+       if ($ring_diff <= 6 && $length_diff <= 15) return 0.5;
+       
+       return 0;
+   }
+   
+   /**
+    * Calculate improved keyword match
+    */
+  private static function calculateImprovedKeywordMatch($supplier, $internal) {
+    $supplier_keywords = $supplier['keywords'] ?? [];
+    $internal_keywords = $internal['keywords'] ?? [];
+    
+    if (empty($supplier_keywords) || empty($internal_keywords)) {
+        KT_Cigar_Debug::log("Keyword match: Empty keywords");
+        return 0;
+    }
+    
+    $supplier_lower = array_map('mb_strtolower', $supplier_keywords);
+    $internal_lower = array_map('mb_strtolower', $internal_keywords);
+    
+    $intersection = array_intersect($supplier_lower, $internal_lower);
+    $union = array_unique(array_merge($supplier_lower, $internal_lower));
+    
+    $score = count($union) > 0 ? count($intersection) / count($union) : 0;
+    
+    KT_Cigar_Debug::log("Keyword match: " . count($intersection) . "/" . count($union) . " = " . $score);
+    
+    return $score;
+}
+   
+   /**
+    * Calculate title similarity
+    */
+  private static function calculateTitleSimilarity($title1, $title2) {
+    $norm1 = self::normalizeForComparison($title1);
+    $norm2 = self::normalizeForComparison($title2);
+    
+    if (empty($norm1) || empty($norm2)) {
+        return 0;
+    }
+    
+    // For very short strings, use simple comparison
+    if (strlen($norm1) < 255 && strlen($norm2) < 255) {
+        $distance = levenshtein($norm1, $norm2);
+        $max_len = max(strlen($norm1), strlen($norm2));
+        $similarity = $max_len > 0 ? (1 - $distance / $max_len) : 0;
+    } else {
+        // For long strings, use similar_text
+        similar_text($norm1, $norm2, $percent);
+        $similarity = $percent / 100;
+    }
+    
+    KT_Cigar_Debug::log("Title similarity: " . $norm1 . " vs " . $norm2 . " = " . $similarity);
+    
+    return $similarity;
+}
+   /**
+    * Normalize text for comparison
+    */
+   private static function normalizeForComparison($text) {
+       $normalized = mb_strtolower($text);
+       $normalized = preg_replace('/[^\p{L}\p{N}\s]/u', ' ', $normalized);
+       $normalized = preg_replace('/\s+/', ' ', $normalized);
+       return trim($normalized);
+   }
+   
+   /**
+    * Calculate string similarity
+    */
+   private static function calculateStringSimilarity($str1, $str2) {
+       if (empty($str1) || empty($str2)) {
+           return 0;
+       }
+       
+       $norm1 = self::normalizeForComparison($str1);
+       $norm2 = self::normalizeForComparison($str2);
+       
+       $distance = levenshtein($norm1, $norm2);
+       $max_len = max(strlen($norm1), strlen($norm2));
+       $levenshtein_similarity = $max_len > 0 ? (1 - $distance / $max_len) : 0;
+       
+       $substring_similarity = 0;
+       if (mb_strpos($norm1, $norm2) !== false || mb_strpos($norm2, $norm1) !== false) {
+           $substring_similarity = 0.8;
+       }
+       
+       return max($levenshtein_similarity, $substring_similarity);
+   }
+   
+   /**
+    * Calculate semantic similarity
+    */
+   private static function calculateSemanticSimilarity($title1, $title2) {
+       $embedding1 = self::createDataFileBasedEmbedding($title1);
+       $embedding2 = self::createDataFileBasedEmbedding($title2);
+       
+       return self::cosineSimilarity($embedding1, $embedding2);
+   }
+   
+   /**
+    * Create embedding vector using data file categories
+    */
+   private static function createDataFileBasedEmbedding($text) {
+       self::init();
+       
+       $text_lower = mb_strtolower($text);
+       $vector = [];
+       
+       $brand_score = 0;
+       foreach (['cuban', 'non_cuban'] as $section) {
+           if (isset(self::$data_file['brands'][$section])) {
+               foreach (self::$data_file['brands'][$section] as $brand => $variations) {
+                   if (mb_strpos($text_lower, mb_strtolower($brand)) !== false) {
+                       $brand_score += 2;
+                   }
+                   foreach ($variations as $variation) {
+                       if (mb_strpos($text_lower, mb_strtolower($variation)) !== false) {
+                           $brand_score += 1;
+                       }
+                   }
+               }
+           }
+       }
+       $vector['brands'] = $brand_score;
+       
+       $series_score = 0;
+       if (isset(self::$data_file['series'])) {
+           foreach (self::$data_file['series'] as $brand => $series_list) {
+               foreach ($series_list as $series => $variations) {
+                   if (mb_strpos($text_lower, mb_strtolower($series)) !== false) {
+                       $series_score += 2;
+                   }
+                   foreach ($variations as $variation) {
+                       if (mb_strpos($text_lower, mb_strtolower($variation)) !== false) {
+                           $series_score += 1;
+                       }
+                   }
+               }
+           }
+       }
+       $vector['series'] = $series_score;
+       
+       $vitola_score = 0;
+       if (isset(self::$data_file['vitola_mappings'])) {
+           foreach (self::$data_file['vitola_mappings'] as $vitola => $variations) {
+               foreach ($variations as $variation) {
+                   if (mb_strpos($text_lower, mb_strtolower($variation)) !== false) {
+                       $vitola_score += 1;
+                   }
+               }
+           }
+       }
+       $vector['vitolas'] = $vitola_score;
+       
+       $special_score = 0;
+       if (isset(self::$data_file['special_editions'])) {
+           foreach (self::$data_file['special_editions'] as $edition => $variations) {
+               foreach ($variations as $variation) {
+                   if (mb_strpos($text_lower, mb_strtolower($variation)) !== false) {
+                       $special_score += 1;
+                   }
+               }
+           }
+       }
+       
+       if (isset(self::$data_file['zodiac_years'])) {
+           foreach (self::$data_file['zodiac_years'] as $animal => $variations) {
+               foreach ($variations as $variation) {
+                   if (mb_strpos($text_lower, mb_strtolower($variation)) !== false) {
+                       $special_score += 1;
+                   }
+               }
+           }
+       }
+       $vector['special_editions'] = $special_score;
+       
+       $packaging_score = 0;
+       if (isset(self::$data_file['packaging'])) {
+           foreach (self::$data_file['packaging'] as $package => $variations) {
+               foreach ($variations as $variation) {
+                   if (mb_strpos($text_lower, mb_strtolower($variation)) !== false) {
+                       $packaging_score += 1;
+                   }
+               }
+           }
+       }
+       $vector['packaging'] = $packaging_score;
+       
+       $vector['dimensions'] = preg_match('/\d+\s*[×x*]\s*\d+/', $text) ? 1 : 0;
+       $vector['counts'] = preg_match('/\d+\s*(?:支|ct|count)/', $text) ? 1 : 0;
+       $vector['years'] = preg_match('/20\d{2}/', $text) ? 1 : 0;
+       
+       return $vector;
+   }
+   
+   /**
+    * Calculate cosine similarity
+    */
+   private static function cosineSimilarity($vector1, $vector2) {
+       $dot_product = 0;
+       $magnitude1 = 0;
+       $magnitude2 = 0;
+       
+       $all_keys = array_unique(array_merge(array_keys($vector1), array_keys($vector2)));
+       
+       foreach ($all_keys as $key) {
+           $val1 = $vector1[$key] ?? 0;
+           $val2 = $vector2[$key] ?? 0;
+           
+           $dot_product += $val1 * $val2;
+           $magnitude1 += $val1 * $val1;
+           $magnitude2 += $val2 * $val2;
+       }
+       
+       $magnitude1 = sqrt($magnitude1);
+       $magnitude2 = sqrt($magnitude2);
+       
+       if ($magnitude1 == 0 || $magnitude2 == 0) {
+           return 0;
+       }
+       
+       return $dot_product / ($magnitude1 * $magnitude2);
+   }
+   
+   /**
+    * Check bidirectional compatibility
+    */
+   private static function checkBidirectionalCompatibility($supplier, $internal) {
+       $compatibility_score = 1.0;
+       
+       if (self::hasIncompatiblePackaging($supplier, $internal)) {
+           $compatibility_score -= 0.3;
+       }
+       
+       if (self::hasIncompatibleCounts($supplier, $internal)) {
+           $compatibility_score -= 0.4;
+       }
+       
+       if (self::hasIncompatibleSpecialFeatures($supplier, $internal)) {
+           $compatibility_score -= 0.3;
+       }
+       
+       return max(0, $compatibility_score);
+   }
+   
+   /**
+    * Check incompatible packaging
+    */
+   private static function hasIncompatiblePackaging($supplier, $internal) {
+       self::init();
+       
+       $supplier_title = mb_strtolower($supplier['title']);
+       $internal_title = mb_strtolower($internal['title']);
+       
+       $supplier_packaging = null;
+       $internal_packaging = null;
+       
+       if (isset(self::$data_file['packaging'])) {
+           foreach (self::$data_file['packaging'] as $package_type => $variations) {
+               foreach ($variations as $variation) {
+                   if (mb_strpos($supplier_title, mb_strtolower($variation)) !== false) {
+                       $supplier_packaging = $package_type;
+                   }
+                   if (mb_strpos($internal_title, mb_strtolower($variation)) !== false) {
+                       $internal_packaging = $package_type;
+                   }
+               }
+           }
+       }
+       
+       if ($supplier_packaging && $internal_packaging && $supplier_packaging !== $internal_packaging) {
+           return true;
+       }
+       
+       return false;
+   }
+   
+   /**
+    * Check incompatible counts
+    */
+   private static function hasIncompatibleCounts($supplier, $internal) {
+       if (!$supplier['count'] || !$internal['count']) {
+           return false;
+       }
+       
+       $count_diff = abs($supplier['count'] - $internal['count']);
+       
+       if ($count_diff > 50) {
+           return true;
+       }
+       
+       if (($supplier['count'] == 88 && $internal['count'] == 200) ||
+           ($supplier['count'] == 200 && $internal['count'] == 88)) {
+           return true;
+       }
+       
+       return false;
+   }
+   
+  /**
+    * Check incompatible special features
+    */
+   private static function hasIncompatibleSpecialFeatures($supplier, $internal) {
+       self::init();
+       
+       $supplier_title = mb_strtolower($supplier['title']);
+       $internal_title = mb_strtolower($internal['title']);
+       
+       if (isset(self::$data_file['zodiac_years'])) {
+           $supplier_animal = null;
+           $internal_animal = null;
+           
+           foreach (self::$data_file['zodiac_years'] as $english_animal => $variations) {
+               foreach ($variations as $variation) {
+                   if (mb_strpos($supplier_title, mb_strtolower($variation)) !== false) {
+                       $supplier_animal = $english_animal;
+                   }
+                   if (mb_strpos($internal_title, mb_strtolower($variation)) !== false) {
+                       $internal_animal = $english_animal;
+                   }
+               }
+           }
+           
+           if ($supplier_animal && $internal_animal && $supplier_animal !== $internal_animal) {
+               return true;
+           }
+       }
+       
+       return false;
+   }
+   
+   /**
+    * Calculate final hybrid score
+    */
+private static function calculateHybridScore($scores) {
+    // If exact match is 0 (different brands), final score is 0
+    if ($scores['exact'] == 0) {
+        return 0;
+    }
+    
+    // Calculate weighted score
+    $final_score = (
+        $scores['exact'] * 0.40 +        
+        $scores['fuzzy'] * 0.25 +        
+        $scores['semantic'] * 0.15 +     
+        $scores['title'] * 0.10 +        
+        $scores['keyword'] * 0.05 +      
+        $scores['compatibility'] * 0.05  
+    );
+
+    $percentage_score = $final_score * 100;
+    
+    return round($percentage_score, 1);
+}
+   
+   /**
+    * Legacy method for backward compatibility - Calculate match score
+    */
+   public static function calculate_match_score($supplier_data, $internal_data) {
+       $score = 0;
+       $max_score = 0;
+       
+       $max_score += 100;
+       if (!empty($supplier_data['brand']) && !empty($internal_data['brand'])) {
+           if (self::isSameBrandUsingDataFile($supplier_data['brand'], $internal_data['brand'])) {
+               $score += 100;
+           } else if (self::brands_similar($supplier_data['brand'], $internal_data['brand'])) {
+               $score += 80;
+           }
+       }
+       
+       $max_score += 50;
+       if (!empty($supplier_data['model']) && !empty($internal_data['model'])) {
+           $series_similarity = self::calculateSeriesSimilarityUsingDataFile(
+               $supplier_data['model'], 
+               $internal_data['model'], 
+               $supplier_data['brand']
+           );
+           $score += $series_similarity * 50;
+       }
+       
+       $max_score += 40;
+       if (!empty($supplier_data['vitola']) && !empty($internal_data['vitola'])) {
+           if (mb_strtolower($supplier_data['vitola']) === mb_strtolower($internal_data['vitola'])) {
+               $score += 40;
+           }
+       }
+       
+       $max_score += 30;
+       if (!empty($supplier_data['dimension_info']['format']) && !empty($internal_data['dimension_info']['format'])) {
+           if ($supplier_data['dimension_info']['format'] === $internal_data['dimension_info']['format']) {
+               $score += 30;
+           } else {
+               $dim_similarity = self::calculateDimensionSimilarity(
+                   $supplier_data['dimension_info'], 
+                   $internal_data['dimension_info']
+               );
+               $score += $dim_similarity * 30;
+           }
+       }
+       
+       $max_score += 80;
+       $keyword_score = self::calculate_keyword_similarity($supplier_data['keywords'], $internal_data['keywords']);
+       $score += $keyword_score * 80;
+       
+       return $max_score > 0 ? $score / $max_score : 0;
+   }
+   
+   /**
+    * Legacy method - Check if brands are similar
+    */
+   private static function brands_similar($brand1, $brand2) {
+       return self::isSameBrandUsingDataFile($brand1, $brand2);
+   }
+   
+   /**
+    * Legacy method - Calculate keyword similarity
+    */
+   private static function calculate_keyword_similarity($keywords1, $keywords2) {
+       return self::calculateImprovedKeywordMatch(
+           ['keywords' => $keywords1], 
+           ['keywords' => $keywords2]
+       );
+   }
+   
+   /**
+    * Legacy method - Extract dimensions from string
+    */
+   private static function extract_dimensions($dimensions_string) {
+       if (empty($dimensions_string)) {
+           return null;
+       }
+       
+       if (preg_match('/(\d+)\s*[×x*\/]\s*(\d+)/', $dimensions_string, $matches)) {
+           $first = intval($matches[1]);
+           $second = intval($matches[2]);
+           
+           if ($first >= 20 && $first <= 70 && $second > 70) {
+               return ['ring_gauge' => $first, 'length' => $second, 'format' => $first . '/' . $second];
+           } else if ($second >= 20 && $second <= 70 && $first > 70) {
+               return ['ring_gauge' => $second, 'length' => $first, 'format' => $second . '/' . $first];
+           } else {
+               return ['ring_gauge' => $second, 'length' => $first, 'format' => $second . '/' . $first];
+           }
+       }
+       
+       return null;
+   }
+   
+   /**
+    * Legacy method for backward compatibility - Extract structured data from title
+    */
+   private static function extractStructuredData($title) {
+       return self::process_supplier_product($title);
+   }
+   
+   /**
+    * Debug method to get all available data from data file
+    */
+   public static function debug_get_data_file_info() {
+       self::init();
+       
+       $info = [
+           'loaded' => !empty(self::$data_file),
+           'sections' => array_keys(self::$data_file),
+           'brand_count' => [
+               'cuban' => count(self::$data_file['brands']['cuban'] ?? []),
+               'non_cuban' => count(self::$data_file['brands']['non_cuban'] ?? [])
+           ],
+           'series_brands' => array_keys(self::$data_file['series'] ?? []),
+           'vitola_count' => count(self::$data_file['vitola_mappings'] ?? []),
+           'packaging_types' => array_keys(self::$data_file['packaging'] ?? []),
+           'zodiac_animals' => array_keys(self::$data_file['zodiac_years'] ?? []),
+           'special_editions' => array_keys(self::$data_file['special_editions'] ?? [])
+       ];
+       
+       return $info;
+   }
+   
+   /**
+    * Get all brands from data file
+    */
+   public static function get_all_brands() {
+       self::init();
+       
+       $all_brands = [];
+       
+       foreach (['cuban', 'non_cuban'] as $section) {
+           if (isset(self::$data_file['brands'][$section])) {
+               foreach (self::$data_file['brands'][$section] as $brand => $variations) {
+                   $all_brands[$brand] = [
+                       'type' => $section,
+                       'variations' => $variations
+                   ];
+               }
+           }
+       }
+       
+       return $all_brands;
+   }
+   
+   /**
+    * Get all series for a specific brand from data file
+    */
+   public static function get_brand_series($brand) {
+       self::init();
+       
+       if (isset(self::$data_file['series'][$brand])) {
+           return self::$data_file['series'][$brand];
+       }
+       
+       return [];
+   }
+   
+   /**
+    * Get all vitola mappings from data file
+    */
+   public static function get_vitola_mappings() {
+       self::init();
+       
+       return self::$data_file['vitola_mappings'] ?? [];
+   }
+   
+   /**
+    * Add new brand mapping to data file (utility method)
+    */
+   public static function add_brand_mapping($brand, $variations, $type = 'non_cuban') {
+       self::init();
+       
+       if (!isset(self::$data_file['brands'][$type])) {
+           self::$data_file['brands'][$type] = [];
+       }
+       
+       self::$data_file['brands'][$type][$brand] = $variations;
+       
+       KT_Cigar_Debug::log("Added brand mapping: " . $brand . " with " . count($variations) . " variations");
+   }
+   
+   /**
+    * Add new series mapping to data file (utility method)
+    */
+   public static function add_series_mapping($brand, $series, $variations) {
+       self::init();
+       
+       if (!isset(self::$data_file['series'][$brand])) {
+           self::$data_file['series'][$brand] = [];
+       }
+       
+       self::$data_file['series'][$brand][$series] = $variations;
+       
+       KT_Cigar_Debug::log("Added series mapping for " . $brand . ": " . $series . " with " . count($variations) . " variations");
+   }
+   
+   /**
+    * Test a title against the extraction system
+    */
+   public static function test_title_extraction($title) {
+       self::init();
+       
+       KT_Cigar_Debug::log("=== TESTING TITLE EXTRACTION ===");
+       KT_Cigar_Debug::log("Input title: " . $title);
+       
+       $result = self::process_supplier_product($title);
+       
+       KT_Cigar_Debug::log("Extraction results:");
+       KT_Cigar_Debug::log("- Product Type: " . ($result['product_type'] ?? 'None'));
+       KT_Cigar_Debug::log("- Brand: " . ($result['brand'] ?? 'None'));
+       KT_Cigar_Debug::log("- Series: " . ($result['model'] ?? 'None'));
+       KT_Cigar_Debug::log("- Vitola: " . ($result['vitola'] ?? 'None'));
+       KT_Cigar_Debug::log("- Count: " . ($result['count'] ?? 'None'));
+       KT_Cigar_Debug::log("- Year: " . ($result['year'] ?? 'None'));
+       KT_Cigar_Debug::log("- Packaging: " . ($result['packaging'] ?? 'None'));
+       KT_Cigar_Debug::log("- Special Edition: " . ($result['special_edition'] ?? 'None'));
+       KT_Cigar_Debug::log("- Dimensions: " . (isset($result['dimension_info']['format']) ? $result['dimension_info']['format'] : 'None'));
+       KT_Cigar_Debug::log("- Keywords: " . implode(', ', $result['keywords']));
+       KT_Cigar_Debug::log("=== END TEST ===");
+       
+       return $result;
+   }
+   
+   /**
+    * Batch process multiple titles for testing
+    */
+   public static function batch_test_titles($titles) {
+       self::init();
+       
+       $results = [];
+       
+       foreach ($titles as $title) {
+           $results[] = [
+               'title' => $title,
+               'extracted' => self::process_supplier_product($title)
+           ];
+       }
+       
+       return $results;
+   }
+   
+   /**
+    * Get statistics about data file usage
+    */
+   public static function get_data_file_statistics() {
+       self::init();
+       
+       $stats = [
+           'total_brands' => 0,
+           'total_series' => 0,
+           'total_vitolas' => count(self::$data_file['vitola_mappings'] ?? []),
+           'total_packaging_types' => count(self::$data_file['packaging'] ?? []),
+           'total_zodiac_years' => count(self::$data_file['zodiac_years'] ?? []),
+           'total_special_editions' => count(self::$data_file['special_editions'] ?? []),
+           'brand_aliases' => count(self::$data_file['brand_aliases'] ?? [])
+       ];
+       
+       // Count brands
+       foreach (['cuban', 'non_cuban'] as $section) {
+           if (isset(self::$data_file['brands'][$section])) {
+               $stats['total_brands'] += count(self::$data_file['brands'][$section]);
+           }
+       }
+       
+       // Count series
+       if (isset(self::$data_file['series'])) {
+           foreach (self::$data_file['series'] as $brand => $series_list) {
+               $stats['total_series'] += count($series_list);
+           }
+       }
+       
+       return $stats;
+   }
+   
+   /**
+    * Validate data file structure
+    */
+   public static function validate_data_file() {
+       self::init();
+       
+       $errors = [];
+       $warnings = [];
+       
+       // Check required sections
+       $required_sections = ['brands', 'series', 'vitola_mappings', 'packaging'];
+       foreach ($required_sections as $section) {
+           if (!isset(self::$data_file[$section])) {
+               $errors[] = "Missing required section: " . $section;
+           }
+       }
+       
+       // Check brands structure
+       if (isset(self::$data_file['brands'])) {
+           foreach (['cuban', 'non_cuban'] as $section) {
+               if (!isset(self::$data_file['brands'][$section])) {
+                   $warnings[] = "Missing brand section: " . $section;
+               } else if (!is_array(self::$data_file['brands'][$section])) {
+                   $errors[] = "Brand section " . $section . " is not an array";
+               }
+           }
+       }
+       
+       // Check series structure
+       if (isset(self::$data_file['series'])) {
+           foreach (self::$data_file['series'] as $brand => $series_list) {
+               if (!is_array($series_list)) {
+                   $errors[] = "Series for brand " . $brand . " is not an array";
+               }
+           }
+       }
+       
+       return [
+           'valid' => empty($errors),
+           'errors' => $errors,
+           'warnings' => $warnings
+       ];
+   }
+   
+   /**
+    * Clear internal caches (for testing/development)
+    */
+   public static function clear_caches() {
+       self::$embedding_cache = [];
+       self::$logged_messages = [];
+       KT_Cigar_Debug::log("Internal caches cleared");
+   }
+   
+   /**
+    * Force reload data file
+    */
+   public static function reload_data_file() {
+       self::$initialized = false;
+       self::$data_file = null;
+       self::clear_caches();
+       self::init(true);
+       KT_Cigar_Debug::log("Data file reloaded");
+   }
+   
+   /**
+    * Get data file path
+    */
+   public static function get_data_file_path() {
+       return WP_CONTENT_DIR . '/cigar-mappings-data.php';
+   }
+   
+   /**
+    * Check if data file exists and is readable
+    */
+   public static function check_data_file_status() {
+       $path = self::get_data_file_path();
+       
+       return [
+           'exists' => file_exists($path),
+           'readable' => is_readable($path),
+           'writable' => is_writable($path),
+           'size' => file_exists($path) ? filesize($path) : 0,
+           'modified' => file_exists($path) ? filemtime($path) : 0,
+           'path' => $path
+       ];
+   }
+   
+   /**
+    * Export current data file structure as array (for backup/debugging)
+    */
+   public static function export_data_structure() {
+       self::init();
+       return self::$data_file;
+   }
+   
+   /**
+    * Search for a specific term across all data file categories
+    */
+   public static function search_data_file($search_term) {
+       self::init();
+       
+       $results = [];
+       $search_lower = mb_strtolower($search_term);
+       
+       // Search brands
+       foreach (['cuban', 'non_cuban'] as $section) {
+           if (isset(self::$data_file['brands'][$section])) {
+               foreach (self::$data_file['brands'][$section] as $brand => $variations) {
+                   if (mb_strpos(mb_strtolower($brand), $search_lower) !== false) {
+                       $results['brands'][] = ['type' => $section, 'brand' => $brand, 'match' => 'brand_name'];
+                   }
+                   
+                   foreach ($variations as $variation) {
+                       if (mb_strpos(mb_strtolower($variation), $search_lower) !== false) {
+                           $results['brands'][] = ['type' => $section, 'brand' => $brand, 'variation' => $variation, 'match' => 'variation'];
+                       }
+                   }
+               }
+           }
+       }
+       
+       // Search series
+       if (isset(self::$data_file['series'])) {
+           foreach (self::$data_file['series'] as $brand => $series_list) {
+               foreach ($series_list as $series => $variations) {
+                   if (mb_strpos(mb_strtolower($series), $search_lower) !== false) {
+                       $results['series'][] = ['brand' => $brand, 'series' => $series, 'match' => 'series_name'];
+                   }
+                   
+                   foreach ($variations as $variation) {
+                       if (mb_strpos(mb_strtolower($variation), $search_lower) !== false) {
+                           $results['series'][] = ['brand' => $brand, 'series' => $series, 'variation' => $variation, 'match' => 'variation'];
+                       }
+                   }
+               }
+           }
+       }
+       
+       // Search vitolas
+       if (isset(self::$data_file['vitola_mappings'])) {
+           foreach (self::$data_file['vitola_mappings'] as $vitola => $patterns) {
+               foreach ($patterns as $pattern) {
+                   if (mb_strpos(mb_strtolower($pattern), $search_lower) !== false) {
+                       $results['vitolas'][] = ['vitola' => $vitola, 'pattern' => $pattern];
+                   }
+               }
+           }
+       }
+       
+       return $results;
+   }
+
+	/**
+ * Process product with KT_Cigar_Mappings
+ * 
+ * @param string $product_title Product title
+ * @return array Processed product data
+ */
+private function process_product_with_mappings($product_title) {
+    // Ensure KT_Cigar_Mappings is loaded
+    if (!$this->ensure_kt_mappings_loaded()) {
+        $this->log_debug("KT_Cigar_Mappings not available, using fallback for: $product_title");
+        return array(
+            "title" => $product_title,
+            "keywords" => array("FULL:" . strtolower($product_title)),
+            "brand" => null,
+            "model" => null,
+            "vitola" => null,
+            "count" => null,
+            "year" => null,
+            "dimension_info" => array()
+        );
+    }
+    
+    try {
+        // Note: $product is not defined in this context, so we can't extract dimensions from it
+        // If you need dimensions, they should be passed as a parameter to this method
+        $dimensions = "";
+        
+        $processed_product = KT_Cigar_Mappings::process_supplier_product(
+            $product_title,
+            $dimensions,
+            "" // description
+        );
+        
+        // Validate the result
+        if (!is_array($processed_product) || empty($processed_product)) {
+            throw new Exception("Invalid result from KT_Cigar_Mappings");
+        }
+        
+        // IMPROVED DEBUGGING
+        $this->log_debug("KT_Cigar_Mappings SUCCESS for '$product_title':");
+        $this->log_debug("  - Brand: " . ($processed_product["brand"] ?? "NONE"));
+        $this->log_debug("  - Model: " . ($processed_product["model"] ?? "NONE"));
+        $this->log_debug("  - Keywords count: " . count($processed_product["keywords"] ?? []));
+        $this->log_debug("  - First 3 keywords: " . json_encode(array_slice($processed_product["keywords"] ?? [], 0, 3)));
+        
+        // FORCE FALLBACK if keywords are empty
+        if (empty($processed_product["keywords"]) || !is_array($processed_product["keywords"])) {
+            $processed_product["keywords"] = array("FULL:" . strtolower($product_title));
+            $this->log_debug("Added fallback keywords for empty result");
+        }
+        
+        // Always ensure at least 3 keywords for better matching
+        if (count($processed_product["keywords"]) < 3) {
+            $words = explode(' ', $product_title);
+            foreach ($words as $word) {
+                $word = trim($word);
+                if (strlen($word) > 2 && !in_array($word, $processed_product["keywords"])) {
+                    $processed_product["keywords"][] = $word;
+                    if (count($processed_product["keywords"]) >= 5) break; // Limit to prevent too many keywords
+                }
+            }
+            $this->log_debug("Enhanced keywords count to: " . count($processed_product["keywords"]));
+        }
+        
+        return $processed_product;
+        
+    } catch (Exception $e) {
+        $this->log_debug("ERROR in KT_Cigar_Mappings processing '$product_title': " . $e->getMessage());
+        return array(
+            "title" => $product_title,
+            "keywords" => array("FULL:" . strtolower($product_title)),
+            "brand" => null,
+            "model" => null,
+            "vitola" => null,
+            "count" => null,
+            "year" => null,
+            "dimension_info" => array()
+        );
+    }
+}
+
+	
+	
+	
+	
+}
+
+// Initialize the class when file is loaded
+add_action('init', function() {
+   KT_Cigar_Mappings::init();
+});
